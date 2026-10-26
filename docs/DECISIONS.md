@@ -85,6 +85,45 @@ way.
 It assumes each value's valid range is one interval around the current value,
 which holds for every rule here.
 
+## Typed values vs. sliders, and "Make it fit"
+
+Sliders only move through valid designs. Typed numbers apply on Enter/blur,
+clamped to the absolute limits, but they're allowed past the slider range:
+that's how you ask for something the current design can't do yet ("this has
+to be 45 mm OD").
+
+When the design is broken, "Make it fit" (`shared/fit.ts`) repairs it while
+keeping what the user edited. The app tracks edited fields in order. The fit
+first drops overrides the user didn't make (e.g. from a preset), then changes
+one field at a time to the nearest value that fixes everything, or failing
+that leaves the fewest errors. Untouched fields go first, in the part's
+`fitOrder` (holes, then bore, ball size, OD), then the user's own edits,
+oldest first. It reports every change, and undo reverts it.
+
+It's greedy, not an optimiser: a single visible change per step is easier to
+trust and to explain than a solver moving five values at once.
+
+Undo/redo keeps up to 100 steps; slider drags on one field within 800 ms
+merge into one step.
+
+Select options aren't disabled. On a valid design they're marked "(won't
+fit)"; on a broken one, the ones that would fix it are marked "(fits)".
+Disabling them locked the dropdowns as soon as the design was broken.
+
+## Bore shape and shaft fit
+
+Round, D-flat and hex. D-flats are on most small motor shafts; hex shafts
+are everywhere in hobby robotics. The hex is cut into a smaller round hole,
+and the D-flat adds the segment back into the round bore. Wall checks use the
+hex corners, not the flats.
+
+"Shaft fit" is a separate allowance added to the bore (press / snug / slip /
+loose, or custom), so the bore field stays the shaft size the user knows.
+
+A set-screw option was left out on purpose: the screw would go radially
+through the inner ring, straight through the race, and the outer ring covers
+it so a tool can't reach it.
+
 ## Ball fit check
 
 The first flat rule only compared the flat to the ball contact points, which

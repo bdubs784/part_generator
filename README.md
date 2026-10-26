@@ -30,7 +30,9 @@ overridden.
 
 | Input | Default | Notes |
 |---|---|---|
-| Outer diameter / bore | 91.7 / 52 mm | |
+| Outer diameter / bore | 91.7 / 52 mm | bore is the shaft size (across flats for hex) |
+| Bore shape | round | round, D-flat or hex |
+| Shaft fit | snug (+0.10) | added to the bore so the print fits the shaft |
 | Ball size | 3/16" (4.7625 mm) | standard steel ball sizes, or custom |
 | Play | 0.05 mm | total; axial = radial since the flanks are 45°. Below 0 only with "Allow negative play" |
 | Bolt holes | M3 tight (Ø3.0), 4 per ring | or none |
@@ -46,7 +48,9 @@ overridden.
 | Ball count | 70% of the max that fits |
 
 Sliders only cover values that keep the design valid, so dragging can't make
-a wall too thin or a ball overlap a ring.
+a wall too thin or a ball overlap a ring. Typing a value past the slider range
+is allowed; **Make it fit** then adjusts the values you haven't touched to
+make it work, and tells you what it changed.
 
 ## Development
 
