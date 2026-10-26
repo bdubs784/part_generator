@@ -171,3 +171,40 @@ OrbitControls, and wiring it up with `useThree` is about 20 lines.
 
 Uses a three.js clipping plane, so the cut faces aren't capped (you see the
 inside of the rings). Good enough to check the groove profile.
+
+## Backend: Cloudflare Worker + D1
+
+The API only stores designs and serves the catalog; geometry stays in the
+browser. D1 (SQLite) over Postgres on Neon: same platform and deploy as the
+Worker, no cold starts after idle, and the free tier is far more than this
+needs. Migrations live in `backend/migrations` and run with
+`wrangler d1 migrations apply` in CI before each deploy.
+
+- **Validation:** `POST /api/designs` runs the same `parseBearingInputs` +
+  `resolveBearing` + `validateBearing` as the UI. The shared code has no CAD
+  imports, so the Worker bundle stays small.
+- **What gets stored:** the inputs plus overrides, not the resolved numbers
+  (see "Inputs vs. derived values"). `schema_ver` is saved with each design and
+  `migrateInputs()` is where upgrades go when the inputs change shape.
+- **Dedupe:** `params_hash` is SHA-256 of part type + schema version + the
+  inputs as sorted-key JSON, with a unique index. Saving the same design twice
+  returns the same link (200 instead of 201), whatever order the keys came in.
+- **IDs:** 6 random characters from an alphabet without 0/1/i/l/o, so links
+  survive being read out loud. ~890 million combinations; inserts retry on a
+  clash.
+- **Rate limiting:** fixed window, 20 saves per IP per 10 minutes, counted in a
+  D1 table with one upsert per save. IPs are stored only as a salted hash.
+  Durable Objects or Cloudflare's rate limit binding would be more exact, but
+  this behaves the same in tests, local dev and production.
+- **CORS:** only `https://bdubs784.github.io` and localhost get CORS headers.
+  That stops other sites' pages from calling the API, not scripts; the rate
+  limit and validation are what actually protect it.
+- **Without the API:** the site still works. The catalog and Share button just
+  don't appear, and a production build never falls back to localhost.
+
+## Testing the API without Cloudflare
+
+Handlers take a small `Db` interface (the slice of D1 they use). Tests back it
+with Node's built-in `node:sqlite` and run the real migration files, so the
+SQL is tested for real with no extra dependency. Playwright starts the actual
+Worker with `wrangler dev` and a local D1 for the end-to-end share test.

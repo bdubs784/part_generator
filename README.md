@@ -52,6 +52,22 @@ a wall too thin or a ball overlap a ring. Typing a value past the slider range
 is allowed; **Make it fit** then adjusts the values you haven't touched to
 make it work, and tells you what it changed.
 
+## API
+
+A Cloudflare Worker with a D1 (SQLite) database stores shared designs and the
+standard bearing catalog. Requests from browsers are only accepted from this
+site and localhost.
+
+| Method | Path | |
+|---|---|---|
+| `GET` | `/api/health` | `{ ok, catalog }` |
+| `GET` | `/api/catalog/bearings` | standard sizes: `{ bearings: [{ designation, bore_mm, od_mm, width_mm, notes }] }` |
+| `POST` | `/api/designs` | body `{ part_type: "bearing", params }`. Validated with the same rules as the UI. Returns `{ id, url }`, 201 if new, 200 if that exact design was already saved |
+| `GET` | `/api/designs/:id` | `{ id, part_type, schema_ver, params, created_at }` |
+
+Errors are JSON `{ error, issues? }`: 400 invalid params, 404 not found,
+413 body too large, 429 more than 20 saves in 10 minutes.
+
 ## Development
 
 ```sh
@@ -60,6 +76,9 @@ npm run dev        # http://localhost:5173/part_generator/
 npm test           # unit tests (validation + geometry)
 npm run test:e2e   # Playwright, builds and serves the site first
 npm run lint
+
+npm run api:migrate:local   # once: create the local D1 tables
+npm run api:dev             # Worker on http://127.0.0.1:8787
 ```
 
 Design notes are in [docs/DECISIONS.md](docs/DECISIONS.md).
@@ -67,7 +86,7 @@ Design notes are in [docs/DECISIONS.md](docs/DECISIONS.md).
 ## Roadmap
 
 - [x] Bearing with live preview, validation, STEP/STL download
-- [ ] Bearing size catalog and share links (Cloudflare Worker + D1)
+- [x] Bearing size catalog and share links (Cloudflare Worker + D1)
 - [ ] Geometry in a Web Worker, cache by parameter hash
 - [ ] Gallery of saved designs
 - [ ] Spur gear, MG996R servo mount
