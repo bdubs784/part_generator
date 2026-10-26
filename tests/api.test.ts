@@ -194,3 +194,14 @@ describe('routing and CORS', () => {
     expect(res.headers.get('Access-Control-Allow-Methods')).toContain('POST')
   })
 })
+
+describe('catalog data', () => {
+  it('has the open 688 at 4 mm wide', async () => {
+    const { bearings } = await (await call('/api/catalog/bearings')).json()
+    expect(bearings.find((b: { designation: string }) => b.designation === '688')).toMatchObject({
+      bore_mm: 8,
+      od_mm: 16,
+      width_mm: 4,
+    })
+  })
+})

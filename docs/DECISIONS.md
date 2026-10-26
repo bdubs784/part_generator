@@ -245,3 +245,10 @@ Handlers take a small `Db` interface (the slice of D1 they use). Tests back it
 with Node's built-in `node:sqlite` and run the real migration files, so the
 SQL is tested for real with no extra dependency. Playwright starts the actual
 Worker with `wrangler dev` and a local D1 for the end-to-end share test.
+
+## Catalog data
+
+The 24 standard sizes were checked one by one against NSK's product pages
+(Oct 2026). All matched except the 688: the open bearing is 8 × 16 × 4, and
+the 5 mm width I'd seeded is the shielded 688ZZ. Applied migrations are never
+edited, so the fix is `0003_fix_688_width.sql`.
