@@ -11,6 +11,7 @@ import {
   boreDiameter,
   boreReach,
   DERIVED_KEYS,
+  FIELDS,
   innerProfile,
   NOTCH_OVERCUT,
   outerProfile,
@@ -27,9 +28,22 @@ import { checkRanges, type Issue, type ValidationResult } from './params'
 
 const fmt = (n: number) => n.toFixed(2)
 
+// Fields hidden in the form because the feature they belong to is off.
+function inactiveKeys(p: BearingParams): Set<ParamKey> {
+  const off = new Set<ParamKey>()
+  for (const f of FIELDS) {
+    if (!f.dependsOn) continue
+    const v = p[f.dependsOn]
+    if (f.dependsOnValue === undefined ? v === 0 : v !== f.dependsOnValue) off.add(f.key)
+  }
+  return off
+}
+
 export function validateBearing(p: BearingParams): ValidationResult<ParamKey> {
-  // Ranges first. Anything past here assumes finite numbers.
-  const issues: Issue<ParamKey>[] = checkRanges(PARAMS, p)
+  // Ranges first. Anything past here assumes finite numbers. Values for
+  // features that are switched off (bolt circles with no holes) don't count.
+  const off = inactiveKeys(p)
+  const issues: Issue<ParamKey>[] = checkRanges(PARAMS, p).filter((i) => !i.params.some((k) => off.has(k)))
   if (issues.length) return { ok: false, issues }
 
   const err = (message: string, ...params: ParamKey[]) => issues.push({ severity: 'error', message, params })

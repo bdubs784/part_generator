@@ -70,11 +70,14 @@ export function fitAround<I extends WithOverrides, P extends object>(start: I, o
     record(field.key, from, value(inputs, field.key))
   }
 
-  // untouched fields in the part's preferred order, then edits oldest first
-  const order = [...opts.order.filter((k) => !pinned.has(k)), ...opts.pinned]
+  // Untouched fields first, in the part's preferred order. Only if they run
+  // out of moves do the user's own edits come in, oldest first.
+  const free = opts.order.filter((k) => !pinned.has(k))
+  let order = free
+  let usingPinned = false
 
   let errors = errorCount(inputs)
-  for (let round = 0; round < MAX_ROUNDS && errors > 0; round++) {
+  for (let round = 0; round < MAX_ROUNDS * 2 && errors > 0; round++) {
     let best: { key: string; v: number; errors: number } | null = null
     for (const key of order) {
       const field = byKey.get(key)
@@ -90,7 +93,12 @@ export function fitAround<I extends WithOverrides, P extends object>(start: I, o
       if (keyBest && keyBest.errors < (best?.errors ?? errors)) best = { key, ...keyBest }
       if (best?.errors === 0) break // earliest field in the order wins
     }
-    if (!best) break
+    if (!best) {
+      if (usingPinned) break
+      usingPinned = true
+      order = [...free, ...opts.pinned]
+      continue
+    }
     const field = byKey.get(best.key)!
     const from = value(inputs, best.key)
     inputs = setField(inputs, field, best.v)
@@ -98,5 +106,7 @@ export function fitAround<I extends WithOverrides, P extends object>(start: I, o
     errors = best.errors
   }
 
-  return { inputs, changes: changes.filter((c) => c.from !== c.to), ok: errors === 0 }
+  // A half-fixed design is worse than the one the user had: give that back.
+  if (errors > 0) return { inputs: start, changes: [], ok: false }
+  return { inputs, changes: changes.filter((c) => c.from !== c.to), ok: true }
 }

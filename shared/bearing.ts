@@ -170,6 +170,9 @@ export const MIN_LIP = 0.6
 // How far the lands sit past the ball contact point at minimum, so the ball
 // rolls on the flank and not near the lip edge.
 export const FLANK_MARGIN = 0.3
+// Smallest gap between the rings the auto rule will leave, per ball diameter.
+// The auto tower design comes out at exactly this (1.9 mm for 3/16" balls).
+export const MIN_RING_GAP = 0.4
 
 // The notch floor goes this far past the groove flat so the ball clears the
 // flat edge on its way in (same 0.10 as the CadQuery version).
@@ -316,11 +319,17 @@ export function resolveBearing(inputs: BearingInputs): BearingParams {
   // tower proportion, but never more than 80% of what the ball allows
   const flat = pick('flat', () => Math.max(0, floorTo(Math.min(d * TOWER.flat, 0.8 * maxFlat(d, inputs.play)), 0.05)))
 
-  // Lands halfway between the ball contact point and the face, but never so
-  // close to the face that the lip drops under the minimum. The 0.01 covers
-  // rounding the diameters below.
+  // Lands halfway between the ball contact point and the face, but
+  //  - never so close to the face that the lip drops under the minimum
+  //    (the 0.01 covers rounding the diameters below), and
+  //  - never so far out on a thick ring that the two rings' lands meet:
+  //    keep a gap of at least 0.4 ball diameters between them.
   const g0 = raceGeometry({ ball_d: d, pitch_d, play: inputs.play, flat, inner_od: 0, outer_id: 0 })
-  const mouth = Math.min((contactY + width / 2) / 2, width / 2 - MIN_LIP - 0.01)
+  const mouth = Math.min(
+    (contactY + width / 2) / 2,
+    width / 2 - MIN_LIP - 0.01,
+    (g0.A - g0.B) / 2 - (MIN_RING_GAP * d) / 2,
+  )
   const inner_od = pick('inner_od', () => roundTo(2 * (g0.B + mouth), 0.01))
   const outer_id = pick('outer_id', () => roundTo(2 * (g0.A - mouth), 0.01))
 
@@ -443,4 +452,12 @@ export function boltCircle(diameter: number, startDeg: number, n: number): [numb
     out.push([(diameter / 2) * Math.cos(a), (diameter / 2) * Math.sin(a)])
   }
   return out
+}
+
+// Saved designs carry the schema version they were made with. When inputs
+// change shape, bump SCHEMA_VER and add a step here that upgrades old params,
+// so old share links keep opening.
+export function migrateInputs(schemaVer: number, params: unknown): unknown {
+  if (schemaVer === SCHEMA_VER) return params
+  return null
 }
