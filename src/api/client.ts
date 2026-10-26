@@ -23,6 +23,7 @@ export interface SavedDesign {
   schema_ver: number
   params: unknown // untrusted until parsed
   created_at: string
+  downloads: number
 }
 
 export class ApiError extends Error {
@@ -63,4 +64,21 @@ export async function loadDesign(id: string): Promise<SavedDesign> {
 // Link back to this page with the design id, wherever the page is hosted.
 export function shareUrl(id: string): string {
   return `${location.origin}${location.pathname}?d=${id}`
+}
+
+export interface GalleryPage {
+  designs: SavedDesign[]
+  next: string | null
+}
+
+export async function listDesigns(before?: string): Promise<GalleryPage> {
+  const q = new URLSearchParams({ sort: 'recent', limit: '12' })
+  if (before) q.set('before', before)
+  return request(`/api/designs?${q}`)
+}
+
+// Fire and forget: a missed count isn't worth bothering the user about.
+export function recordDownload(id: string): void {
+  if (!API) return
+  fetch(`${API}/api/designs/${encodeURIComponent(id)}/download`, { method: 'POST' }).catch(() => {})
 }

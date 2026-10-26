@@ -1,9 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
-import type { Shape3D } from 'replicad'
-import { initOC } from './geometry/oc'
-import { meshShape, type MeshData } from './geometry/mesh'
 import { bearing } from './geometry/registry'
-import { migrateInputs, raceGeometry, type BearingInputs, type BearingParams } from '../shared/bearing'
+import { useGeometry } from './geometry/useGeometry'
+import { migrateInputs, raceGeometry, type BearingInputs } from '../shared/bearing'
 import { parseBearingInputs } from '../shared/validate'
 import { clearOverride, fieldRange, isOverridden, optionValid, setField } from '../shared/form'
 import { fitAround, type FitChange } from '../shared/fit'
@@ -14,16 +12,18 @@ import { Viewer, type Ball, type Body } from './ui/Viewer'
 import { Downloads } from './ui/Downloads'
 import { useHistory } from './ui/useHistory'
 import { Share, type ShareState } from './ui/Share'
-import { apiConfigured, fetchCatalog, loadDesign, saveDesign, shareUrl, type CatalogBearing } from './api/client'
+import { Gallery } from './ui/Gallery'
+import {
+  apiConfigured,
+  fetchCatalog,
+  loadDesign,
+  recordDownload,
+  saveDesign,
+  shareUrl,
+  type CatalogBearing,
+} from './api/client'
 
 const COLORS: Record<string, string> = { inner_ring: '#c7ccd4', outer_ring: '#7f97b2' }
-
-interface Model {
-  params: BearingParams // what was actually built
-  shapes: Record<string, Shape3D>
-  meshes: Record<string, MeshData>
-  ms: number
-}
 
 interface Design {
   inputs: BearingInputs
@@ -45,18 +45,20 @@ function describeChange(c: FitChange): string {
 export default function App() {
   const history = useHistory<Design>({ inputs: part.defaults, touched: [] })
   const { inputs, touched } = history.present
-  const [model, setModel] = useState<Model | null>(null)
-  const [ocState, setOcState] = useState<'loading' | 'ready' | 'failed'>('loading')
-  const [buildError, setBuildError] = useState<string | null>(null)
   const [fitNote, setFitNote] = useState<string | null>(null)
   const [section, setSection] = useState(false)
   const [resetSignal, setResetSignal] = useState(0)
   const [catalog, setCatalog] = useState<CatalogBearing[]>([])
   const [share, setShare] = useState<ShareState & { inputs?: BearingInputs }>({ status: 'idle' })
+  // the saved design on screen, if any: downloads of it count toward its total
+  const [saved, setSaved] = useState<{ id: string; inputs: BearingInputs } | null>(null)
+  const [galleryOpen, setGalleryOpen] = useState(false)
 
   const params = useMemo(() => part.resolve(inputs), [inputs])
   const validation = useMemo(() => part.validate(params), [params])
   const race = useMemo(() => raceGeometry(params), [params])
+  const geometry = useGeometry(params, validation.ok)
+  const { model } = geometry
 
   // Per-field slider limits, auto/override state and issue highlighting.
   const states = useMemo(() => {
@@ -95,35 +97,6 @@ export default function App() {
     return out
   }, [inputs, params, validation])
 
-  useEffect(() => {
-    initOC().then(
-      () => setOcState('ready'),
-      (e) => {
-        console.error(e)
-        setOcState('failed')
-      },
-    )
-  }, [])
-
-  // Rebuild after the sliders settle. OpenCascade runs on the main thread
-  // for now, so don't fire a build on every input event.
-  useEffect(() => {
-    if (ocState !== 'ready' || !validation.ok) return
-    const timer = setTimeout(() => {
-      const t0 = performance.now()
-      try {
-        const shapes = part.build(params)
-        const meshes = Object.fromEntries(Object.entries(shapes).map(([k, s]) => [k, meshShape(s)]))
-        setModel({ params, shapes, meshes, ms: performance.now() - t0 })
-        setBuildError(null)
-      } catch (e) {
-        console.error(e)
-        setBuildError('OpenCascade failed to build this shape. Try nudging a value.')
-      }
-    }, 150)
-    return () => clearTimeout(timer)
-  }, [params, ocState, validation.ok])
-
   // Standard sizes come from the API. Without it the list just isn't there.
   useEffect(() => {
     fetchCatalog().then(setCatalog, () => setCatalog([]))
@@ -135,10 +108,11 @@ export default function App() {
     const id = new URLSearchParams(location.search).get('d')
     if (!id) return
     loadDesign(id).then(
-      (saved) => {
-        const loaded = parseBearingInputs(migrateInputs(saved.schema_ver, saved.params))
+      (design) => {
+        const loaded = parseBearingInputs(migrateInputs(design.schema_ver, design.params))
         if (!loaded) return setFitNote(`Design ${id} was saved by a version this page can't read.`)
         setHistory({ inputs: loaded, touched: [] })
+        setSaved({ id, inputs: loaded })
         setFitNote(`Opened shared design ${id}.`)
       },
       () => setFitNote(`Couldn't open design ${id}. The link may be wrong, or the server is down.`),
@@ -221,12 +195,27 @@ export default function App() {
       ({ id }) => {
         window.history.replaceState(null, '', `?d=${id}`)
         setShare({ status: 'done', link: shareUrl(id), inputs })
+        setSaved({ id, inputs })
       },
       (e) => setShare({ status: 'error', message: e instanceof Error ? e.message : 'Save failed' }),
     )
   }
   // a link only shows while it still matches what's on screen
   const shareState: ShareState = share.status === 'done' && share.inputs !== inputs ? { status: 'idle' } : share
+
+  const openFromGallery = (id: string, opened: BearingInputs) => {
+    commit({ inputs: opened, touched: [] })
+    window.history.replaceState(null, '', `?d=${id}`)
+    setSaved({ id, inputs: opened })
+    setGalleryOpen(false)
+    setFitNote(`Opened design ${id} from the gallery.`)
+  }
+
+  const onDownload = (body: string, format: 'step' | 'stl') => {
+    if (!model) return Promise.reject(new Error('Nothing built yet'))
+    if (saved && saved.inputs === inputs) recordDownload(saved.id)
+    return geometry.exportFile(model.key, body, format)
+  }
 
   const bodies: Body[] = model
     ? Object.entries(model.meshes).map(([name, mesh]) => ({ name, mesh, color: COLORS[name] ?? '#aaa' }))
@@ -242,16 +231,23 @@ export default function App() {
     })
   }, [model])
 
-  const stale = model !== null && model.params !== params
   const errors = validation.issues.filter((i) => i.severity === 'error')
   const warnings = validation.issues.filter((i) => i.severity === 'warning')
+  const timings = model
+    ? Object.entries(model.bodyMs)
+        .map(([name, ms]) => `${name.replace('_', ' ')}: ${Math.round(ms)} ms`)
+        .join(', ')
+    : ''
 
   return (
     <div className="app">
       <aside className="panel">
-        <header>
-          <h1>Part Generator</h1>
-          <p className="sub">{part.name}</p>
+        <header className="panel-head">
+          <div>
+            <h1>Part Generator</h1>
+            <p className="sub">{part.name}</p>
+          </div>
+          {apiConfigured && <button onClick={() => setGalleryOpen(true)}>Gallery</button>}
         </header>
 
         <div className="history">
@@ -325,18 +321,25 @@ export default function App() {
           <label>
             <input type="checkbox" checked={section} onChange={(e) => setSection(e.target.checked)} /> Section
           </label>
-          <span className="status" data-testid="status">
-            {ocState === 'loading' && 'Loading CAD kernel…'}
-            {ocState === 'failed' && 'CAD kernel failed to load'}
-            {ocState === 'ready' && model && !stale && `Built in ${Math.round(model.ms)} ms`}
-            {ocState === 'ready' && stale && validation.ok && 'Updating…'}
+          <span className="status" data-testid="status" title={timings}>
+            {geometry.kernel === 'loading' && 'Loading CAD kernel…'}
+            {geometry.kernel === 'failed' && 'CAD kernel failed to load'}
+            {geometry.kernel === 'ready' && validation.ok && !geometry.current && (
+              <>
+                <span className="spinner" aria-hidden="true" /> Building…
+              </>
+            )}
+            {geometry.kernel === 'ready' &&
+              geometry.current &&
+              model &&
+              `Built in ${Math.round(model.ms)} ms${model.cached ? ' (cached)' : ''}`}
           </span>
         </div>
 
-        {(errors.length > 0 || warnings.length > 0 || buildError || fitNote) && (
+        {(errors.length > 0 || warnings.length > 0 || geometry.error || fitNote) && (
           <ul className="issues" aria-live="polite">
             {fitNote && <li className="note">{fitNote}</li>}
-            {buildError && <li className="error">{buildError}</li>}
+            {geometry.error && <li className="error">{geometry.error}</li>}
             {errors.map((i) => (
               <li key={i.message} className="error">
                 {i.message}
@@ -356,10 +359,12 @@ export default function App() {
           </ul>
         )}
 
-        <Downloads shapes={model?.shapes ?? null} disabled={stale || !validation.ok}>
+        <Downloads bodies={model ? part.bodies : []} disabled={!geometry.current || !validation.ok} onDownload={onDownload}>
           {apiConfigured && <Share state={shareState} disabled={!validation.ok} onShare={onShare} />}
         </Downloads>
       </main>
+
+      {galleryOpen && <Gallery onOpen={openFromGallery} onClose={() => setGalleryOpen(false)} />}
     </div>
   )
 }

@@ -1,5 +1,5 @@
 import { beforeAll, describe, expect, it } from 'vitest'
-import { measureVolume } from 'replicad'
+import { getOC, measureVolume } from 'replicad'
 import { initOCNode } from './setupOC'
 import { buildInnerRing, buildOuterRing } from '../src/geometry/bearing'
 import { BORE, PRESETS, raceGeometry, resolveBearing } from '../shared/bearing'
@@ -51,10 +51,31 @@ describe('bearing solids', () => {
     expect(measureVolume(buildInnerRing(V7))).toBeCloseTo(REF.inner_v5, 2)
   })
 
-  it('outer ring is one closed solid', () => {
-    const ring = buildOuterRing(V5)
-    expect(ring.solids?.length ?? 1).toBe(1)
-    expect(ring.boundingBox.bounds[1][0]).toBeCloseTo(45.85, 3)
+  it('both rings are single valid solids', () => {
+    const oc = getOC()
+    for (const ring of [buildInnerRing(V5), buildOuterRing(V5)]) {
+      expect(ring.solids.length).toBe(1)
+      // OpenCascade's own topology/geometry check: closed shells, no bad faces
+      expect(new oc.BRepCheck_Analyzer(ring.wrapped, true, false, false).IsValid()).toBe(true)
+    }
+    expect(buildOuterRing(V5).boundingBox.bounds[1][0]).toBeCloseTo(45.85, 3)
+  })
+
+  it('stays valid across bore shapes, hole counts and ball sizes', () => {
+    const oc = getOC()
+    const variants = [
+      { ...PRESETS[0].inputs, bore: 20, bore_shape: BORE.HEX },
+      { ...PRESETS[0].inputs, bore: 20, bore_shape: BORE.DFLAT },
+      { ...PRESETS[0].inputs, hole_n: 6 },
+      { ...PRESETS[0].inputs, ball_d: 3, bore: 8, od: 30, hole_d: 0, overrides: {} },
+    ]
+    for (const inputs of variants) {
+      const p = resolveBearing(inputs)
+      for (const ring of [buildInnerRing(p), buildOuterRing(p)]) {
+        expect(ring.solids.length).toBe(1)
+        expect(new oc.BRepCheck_Analyzer(ring.wrapped, true, false, false).IsValid()).toBe(true)
+      }
+    }
   })
 
   it('skips the notch and holes when they are off', () => {

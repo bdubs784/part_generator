@@ -85,3 +85,45 @@ test('share link saves the design and opening it restores it', async ({ page }) 
   await expect(page.locator('.issues .note')).toContainText('Opened shared design')
   await expect(page.getByLabel('Ball count', { exact: true })).toHaveValue('21')
 })
+
+test('moving a slider rebuilds the preview, going back is served from the cache', async ({ page }) => {
+  const status = page.getByTestId('status')
+  const slider = page.getByLabel('Ball count slider')
+  await slider.focus()
+  await page.keyboard.press('ArrowRight')
+  await expect(page.getByLabel('Ball count', { exact: true })).toHaveValue('33')
+  await expect(status).toHaveText(/Built in \d+ ms$/)
+  await page.keyboard.press('ArrowLeft')
+  await expect(status).toHaveText(/Built in \d+ ms \(cached\)/)
+})
+
+test('shared designs show up in the gallery and open from it', async ({ page }) => {
+  await type(page, 'Ball count', '19')
+  await expect(page.getByTestId('status')).toHaveText(/Built in/)
+  await page.getByRole('button', { name: 'Share link' }).click()
+  const link = await page.getByLabel('Share link').inputValue()
+  const id = link.split('d=')[1]
+
+  await page.getByRole('button', { name: 'Start over' }).click()
+  await page.getByRole('button', { name: 'Gallery' }).click()
+  const card = page.getByTestId(`card-${id}`)
+  await expect(card).toContainText('19 ×')
+  await card.click()
+  await expect(page.getByRole('dialog', { name: 'Gallery' })).toHaveCount(0)
+  await expect(page.getByLabel('Ball count', { exact: true })).toHaveValue('19')
+})
+
+test('downloading a shared design counts toward its downloads', async ({ page, request }) => {
+  await type(page, 'Ball count', '18')
+  await expect(page.getByTestId('status')).toHaveText(/Built in/)
+  await page.getByRole('button', { name: 'Share link' }).click()
+  const id = (await page.getByLabel('Share link').inputValue()).split('d=')[1]
+  const before = (await (await request.get(`http://127.0.0.1:8787/api/designs/${id}`)).json()).downloads
+
+  const download = page.waitForEvent('download')
+  await page.locator('.download-row', { hasText: 'inner ring' }).getByRole('button', { name: 'STL' }).click()
+  expect((await download).suggestedFilename()).toBe('inner_ring.stl')
+  await expect
+    .poll(async () => (await (await request.get(`http://127.0.0.1:8787/api/designs/${id}`)).json()).downloads)
+    .toBe(before + 1)
+})

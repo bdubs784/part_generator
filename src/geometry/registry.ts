@@ -1,8 +1,8 @@
 // Every part type the app knows about. Adding a gear later means writing
-// shared/gear.ts (inputs, auto rules, validation) and src/geometry/gear.ts
-// (solids), then adding one entry here.
+// shared/gear.ts (inputs, auto rules, validation), src/geometry/gear.ts
+// (solids, registered in builders.ts for the worker), then one entry here.
+// Nothing in here imports CAD code, so the main bundle stays small.
 
-import type { Shape3D } from 'replicad'
 import type { FieldDef, ParamDef, ValidationResult } from '../../shared/params'
 import type { WithOverrides } from '../../shared/form'
 import {
@@ -15,7 +15,6 @@ import {
   type BearingParams,
 } from '../../shared/bearing'
 import { validateBearing } from '../../shared/validate'
-import { buildBearing } from './bearing'
 
 export interface PartType<I extends WithOverrides, P extends object> {
   id: string
@@ -30,8 +29,8 @@ export interface PartType<I extends WithOverrides, P extends object> {
   // Untouched fields "Make it fit" may change, most expendable first.
   fitOrder: (keyof P & string)[]
   validate: (p: P) => ValidationResult<keyof P & string>
-  // Named bodies, each one becomes its own STEP/STL download.
-  build: (p: P) => Record<string, Shape3D>
+  // Named bodies the worker builds; each becomes its own STEP/STL download.
+  bodies: string[]
 }
 
 export const bearing: PartType<BearingInputs, BearingParams> = {
@@ -47,8 +46,5 @@ export const bearing: PartType<BearingInputs, BearingParams> = {
   // and the OD is the envelope it has to fit in
   fitOrder: ['hole_d', 'hole_n', 'bore', 'ball_d', 'od'],
   validate: validateBearing,
-  build: (p) => {
-    const { inner, outer } = buildBearing(p)
-    return { inner_ring: inner, outer_ring: outer }
-  },
+  bodies: ['inner_ring', 'outer_ring'],
 }

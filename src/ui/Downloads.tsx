@@ -1,14 +1,12 @@
-import type { ReactNode } from 'react'
-import type { Shape3D } from 'replicad'
+import { useState, type ReactNode } from 'react'
+import type { ExportFormat } from '../geometry/service'
 
 interface Props {
-  shapes: Record<string, Shape3D> | null
+  bodies: string[]
   disabled: boolean
+  onDownload: (body: string, format: ExportFormat) => Promise<Blob>
   children?: ReactNode
 }
-
-// Same tolerance the CadQuery script exported STLs with.
-const STL_OPTS = { tolerance: 0.01, angularTolerance: 0.1, binary: true }
 
 function save(blob: Blob, filename: string) {
   const url = URL.createObjectURL(blob)
@@ -19,21 +17,34 @@ function save(blob: Blob, filename: string) {
   setTimeout(() => URL.revokeObjectURL(url), 1000)
 }
 
-export function Downloads({ shapes, disabled, children }: Props) {
-  if (!shapes) return null
+export function Downloads({ bodies, disabled, onDownload, children }: Props) {
+  const [busy, setBusy] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  if (bodies.length === 0) return null
+
+  // the file is made in the geometry worker, so the page stays responsive
+  const get = (body: string, format: ExportFormat) => {
+    setBusy(`${body}.${format}`)
+    setError(null)
+    onDownload(body, format)
+      .then((blob) => save(blob, `${body}.${format}`))
+      .catch((e: Error) => setError(e.message))
+      .finally(() => setBusy(null))
+  }
+
   return (
     <div className="downloads">
-      {Object.entries(shapes).map(([name, shape]) => (
+      {bodies.map((name) => (
         <div key={name} className="download-row">
           <span>{name.replace('_', ' ')}</span>
-          <button disabled={disabled} onClick={() => save(shape.blobSTEP(), `${name}.step`)}>
-            STEP
-          </button>
-          <button disabled={disabled} onClick={() => save(shape.blobSTL(STL_OPTS), `${name}.stl`)}>
-            STL
-          </button>
+          {(['step', 'stl'] as const).map((format) => (
+            <button key={format} disabled={disabled || busy !== null} onClick={() => get(name, format)}>
+              {busy === `${name}.${format}` ? '…' : format.toUpperCase()}
+            </button>
+          ))}
         </div>
       ))}
+      {error && <div className="share-error">{error}</div>}
       {children}
     </div>
   )
