@@ -41,7 +41,7 @@ function cutHoles(ring: Shape3D, holes: [number, number][], hole_d: number, widt
 
 // Rectangular notch in the bottom face, centred on +X, spanning radius r0..r1.
 function cutNotch(ring: Shape3D, p: BearingParams, r0: number, r1: number): Shape3D {
-  if (p.notch_w <= 0 || p.notch_h <= 0) return ring
+  if (!p.fill_notch) return ring
   const y0 = -p.width / 2
   // start a hair below the face so the cut doesn't leave a zero-thickness skin
   const box = makeBox([r0, y0 - 0.01, -p.notch_w / 2], [r1, y0 + p.notch_h, p.notch_w / 2])
@@ -51,7 +51,7 @@ function cutNotch(ring: Shape3D, p: BearingParams, r0: number, r1: number): Shap
 export function buildOuterRing(p: BearingParams): Shape3D {
   const g = raceGeometry(p)
   let ring = revolveProfile(outerProfile(p, g))
-  ring = cutHoles(ring, boltCircle(p.outer_bolt_d, p.outer_bolt_angle), p.hole_d, p.width)
+  ring = cutHoles(ring, boltCircle(p.outer_bolt_d, p.outer_bolt_angle, p.hole_n), p.hole_d, p.width)
   // from inside the ring gap out to just past the outer race flat
   return cutNotch(ring, p, p.inner_od / 2, g.outerFlatR + NOTCH_OVERCUT)
 }
@@ -59,7 +59,7 @@ export function buildOuterRing(p: BearingParams): Shape3D {
 export function buildInnerRing(p: BearingParams): Shape3D {
   const g = raceGeometry(p)
   let ring = revolveProfile(innerProfile(p, g))
-  ring = cutHoles(ring, boltCircle(p.inner_bolt_d, p.inner_bolt_angle), p.hole_d, p.width)
+  ring = cutHoles(ring, boltCircle(p.inner_bolt_d, p.inner_bolt_angle, p.hole_n), p.hole_d, p.width)
   // from just inside the inner race flat out into the ring gap
   return cutNotch(ring, p, g.innerFlatR - NOTCH_OVERCUT, p.outer_id / 2)
 }

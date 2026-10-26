@@ -1,5 +1,6 @@
-// Types every part type shares. A part is a flat object of numbers, which
-// keeps the sliders, share links and the API all generic.
+// Types every part type shares. A part's resolved params are a flat object of
+// numbers (switches are 0/1), which keeps the sliders, share links and the API
+// all generic.
 
 export interface ParamDef<K extends string = string> {
   key: K
@@ -8,8 +9,19 @@ export interface ParamDef<K extends string = string> {
   min: number
   max: number
   step: number
-  group: string
   integer?: boolean
+}
+
+// How a param shows up in the form.
+export interface FieldDef<K extends string = string> {
+  key: K
+  section: 'basic' | 'advanced'
+  group: string // heading inside the section
+  kind: 'number' | 'select' | 'toggle'
+  dependsOn?: K // hidden while that value is 0 (e.g. hole count with no holes)
+  derived?: boolean // worked out automatically unless the user overrides it
+  options?: { label: string; value: number }[]
+  custom?: boolean // select that also allows typing any value
 }
 
 export type Severity = 'error' | 'warning'
@@ -36,17 +48,4 @@ export function checkRanges<K extends string>(defs: ParamDef<K>[], p: Record<K, 
     else if (def.integer && !Number.isInteger(v)) fail(`${def.label} must be a whole number`)
   }
   return issues
-}
-
-// Pull exactly the declared numeric fields out of an untrusted object.
-export function pickParams<K extends string>(defs: ParamDef<K>[], input: unknown): Record<K, number> | null {
-  if (typeof input !== 'object' || input === null) return null
-  const obj = input as Record<string, unknown>
-  const out = {} as Record<K, number>
-  for (const def of defs) {
-    const v = obj[def.key]
-    if (typeof v !== 'number') return null
-    out[def.key] = v
-  }
-  return out
 }
