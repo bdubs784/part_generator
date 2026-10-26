@@ -262,9 +262,10 @@ export default function App() {
           </button>
         </div>
 
-        <label className="preset">
-          Start from
+        <div className="preset">
+          <label htmlFor="start-from">Start from</label>
           <select
+            id="start-from"
             value=""
             onChange={(e) => {
               const [kind, name] = e.target.value.split(':')
@@ -295,7 +296,7 @@ export default function App() {
               </optgroup>
             )}
           </select>
-        </label>
+        </div>
 
         <ParamPanel
           fields={part.fields}
