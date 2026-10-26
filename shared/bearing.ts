@@ -10,7 +10,8 @@
 
 import type { FieldDef, ParamDef } from './params'
 
-export const SCHEMA_VER = 1
+// 2: added chamfer, counterbore, flange (see migrateInputs)
+export const SCHEMA_VER = 2
 
 // Values the user always sets.
 export interface BaseInputs {
@@ -24,6 +25,9 @@ export interface BaseInputs {
   hole_n: number // holes per ring
   fill_notch: number // 1 = cut the ball fill notch
   negative_play: number // 1 = allow play below zero (for printers that print small)
+  chamfer: number // 45 deg chamfer on the bore and OD edges, 0 = none
+  counterbore: number // 1 = counterbore the bolt holes on the top face
+  flange: number // 1 = lip around the top of the outer ring
 }
 
 // Values worked out automatically unless overridden.
@@ -41,6 +45,10 @@ export interface DerivedParams {
   outer_bolt_d: number
   outer_bolt_angle: number
   dflat: number // depth of the D-flat, measured in from the round bore
+  cb_d: number // counterbore diameter
+  cb_depth: number
+  flange_od: number
+  flange_t: number // flange thickness, from the top face down
 }
 
 export type DerivedKey = keyof DerivedParams
@@ -65,6 +73,10 @@ export const DERIVED_KEYS: DerivedKey[] = [
   'outer_bolt_d',
   'outer_bolt_angle',
   'dflat',
+  'cb_d',
+  'cb_depth',
+  'flange_od',
+  'flange_t',
 ]
 
 // Absolute limits. The UI narrows these further to what actually works with
@@ -93,6 +105,13 @@ export const PARAMS: ParamDef<ParamKey>[] = [
   { key: 'outer_bolt_d', label: 'Outer bolt circle', unit: 'mm', min: 5, max: 250, step: 0.1 },
   { key: 'outer_bolt_angle', label: 'Outer hole angle', unit: 'deg', min: 0, max: 90, step: 0.5 },
   { key: 'dflat', label: 'D-flat depth', unit: 'mm', min: 0.1, max: 20, step: 0.05 },
+  { key: 'chamfer', label: 'Edge chamfer', unit: 'mm', min: 0, max: 2, step: 0.1 },
+  { key: 'counterbore', label: 'Counterbore holes', unit: '', min: 0, max: 1, step: 1, integer: true },
+  { key: 'flange', label: 'Outer flange', unit: '', min: 0, max: 1, step: 1, integer: true },
+  { key: 'cb_d', label: 'Counterbore diameter', unit: 'mm', min: 1, max: 20, step: 0.1 },
+  { key: 'cb_depth', label: 'Counterbore depth', unit: 'mm', min: 0.5, max: 15, step: 0.1 },
+  { key: 'flange_od', label: 'Flange diameter', unit: 'mm', min: 10, max: 300, step: 0.5 },
+  { key: 'flange_t', label: 'Flange thickness', unit: 'mm', min: 0.5, max: 15, step: 0.1 },
 ]
 
 // Common steel ball sizes.
@@ -125,6 +144,29 @@ export const BORE_FITS = [
   { label: 'Loose (+0.30)', value: 0.3 },
 ]
 
+// 0.5 mm is about one layer's worth of elephant's foot plus a lead-in.
+export const CHAMFERS = [
+  { label: 'None', value: 0 },
+  { label: '0.3 mm', value: 0.3 },
+  { label: '0.5 mm', value: 0.5 },
+  { label: '0.8 mm', value: 0.8 },
+]
+
+// ISO 4762 socket head cap screw head diameters, by nominal size. Head
+// height equals the nominal size.
+const SHCS_HEAD: [number, number][] = [
+  [2, 3.8],
+  [2.5, 4.5],
+  [3, 5.5],
+  [4, 7.0],
+]
+
+// Which screw a hole size is for (the hole sizes below run a bit big).
+export function screwFor(hole_d: number): { nominal: number; head: number } {
+  const [nominal, head] = SHCS_HEAD.find(([n]) => hole_d <= n + 0.6) ?? SHCS_HEAD[SHCS_HEAD.length - 1]
+  return { nominal, head }
+}
+
 // Printed holes come out undersized, so these run a bit big except "M3 tight",
 // which is what the tower bearing uses.
 export const HOLE_SIZES = [
@@ -152,6 +194,11 @@ export const FIELDS: FieldDef<ParamKey>[] = [
   { key: 'inner_bolt_d', section: 'basic', group: 'Mounting', kind: 'number', derived: true, dependsOn: 'hole_d' },
   { key: 'outer_bolt_d', section: 'basic', group: 'Mounting', kind: 'number', derived: true, dependsOn: 'hole_d' },
   { key: 'fill_notch', section: 'basic', group: 'Mounting', kind: 'toggle' },
+  { key: 'chamfer', section: 'basic', group: 'Finishing', kind: 'select', options: CHAMFERS },
+  { key: 'counterbore', section: 'basic', group: 'Finishing', kind: 'toggle', dependsOn: 'hole_d' },
+  { key: 'flange', section: 'basic', group: 'Finishing', kind: 'toggle' },
+  { key: 'flange_od', section: 'basic', group: 'Finishing', kind: 'number', derived: true, dependsOn: 'flange' },
+  { key: 'flange_t', section: 'basic', group: 'Finishing', kind: 'number', derived: true, dependsOn: 'flange' },
   { key: 'pitch_d', section: 'advanced', group: 'Races', kind: 'number', derived: true },
   { key: 'inner_od', section: 'advanced', group: 'Races', kind: 'number', derived: true },
   { key: 'outer_id', section: 'advanced', group: 'Races', kind: 'number', derived: true },
@@ -160,6 +207,8 @@ export const FIELDS: FieldDef<ParamKey>[] = [
   { key: 'notch_h', section: 'advanced', group: 'Fill notch', kind: 'number', derived: true, dependsOn: 'fill_notch' },
   { key: 'inner_bolt_angle', section: 'advanced', group: 'Hole angles', kind: 'number', derived: true, dependsOn: 'hole_d' },
   { key: 'outer_bolt_angle', section: 'advanced', group: 'Hole angles', kind: 'number', derived: true, dependsOn: 'hole_d' },
+  { key: 'cb_d', section: 'advanced', group: 'Counterbores', kind: 'number', derived: true, dependsOn: 'counterbore' },
+  { key: 'cb_depth', section: 'advanced', group: 'Counterbores', kind: 'number', derived: true, dependsOn: 'counterbore' },
 ]
 
 // FDM limits, assuming a 0.4 mm nozzle.
@@ -202,6 +251,9 @@ export const DEFAULT_INPUTS: BearingInputs = {
   hole_n: 4,
   fill_notch: 1,
   negative_play: 0,
+  chamfer: 0.5,
+  counterbore: 0,
+  flange: 0,
   overrides: {},
 }
 
@@ -210,6 +262,7 @@ export const DEFAULT_INPUTS: BearingInputs = {
 const TOWER_V5: BearingInputs = {
   ...DEFAULT_INPUTS,
   bore_fit: 0, // the printed 52 mm bore is what's on the arm
+  chamfer: 0, // the CadQuery rings have sharp edges
   overrides: {
     width: 6.4,
     ball_n: 33,
@@ -347,6 +400,13 @@ export function resolveBearing(inputs: BearingInputs): BearingParams {
   const outer_bolt_angle = pick('outer_bolt_angle', () => 180 / inputs.hole_n)
   // a 5 mm motor shaft has a 0.5 mm flat
   const dflat = pick('dflat', () => Math.max(0.2, roundTo(inputs.bore * 0.1, 0.05)))
+  // room for the screw head plus 0.6 mm, and 0.2 mm below flush
+  const screw = screwFor(inputs.hole_d)
+  const cb_d = pick('cb_d', () => roundTo(screw.head + 0.6, 0.1))
+  const cb_depth = pick('cb_depth', () => roundTo(screw.nominal + 0.2, 0.1))
+  // a lip wide enough to sit on a plate, about a third of the ring thick
+  const flange_od = pick('flange_od', () => roundTo(inputs.od + 2 * Math.max(3, 0.08 * inputs.od), 0.5))
+  const flange_t = pick('flange_t', () => Math.max(1.6, roundTo(width * 0.3, 0.1)))
 
   return {
     ball_d: d,
@@ -359,6 +419,9 @@ export function resolveBearing(inputs: BearingInputs): BearingParams {
     hole_n: inputs.hole_n,
     fill_notch: inputs.fill_notch,
     negative_play: inputs.negative_play,
+    chamfer: inputs.chamfer,
+    counterbore: inputs.counterbore,
+    flange: inputs.flange,
     width,
     ball_n,
     pitch_d,
@@ -372,27 +435,66 @@ export function resolveBearing(inputs: BearingInputs): BearingParams {
     outer_bolt_d,
     outer_bolt_angle,
     dflat,
+    cb_d,
+    cb_depth,
+    flange_od,
+    flange_t,
   }
 }
 
 // [x, y] points of a closed ring cross-section in the XY plane, revolved about Y.
 export type Profile = [number, number][]
 
+// Replace the corner at index i with a 45 deg chamfer of size c (measured
+// along both edges). Only used on convex outside corners.
+function chamferCorner(pts: Profile, i: number, c: number): Profile {
+  if (c <= 0) return pts
+  const n = pts.length
+  const [cx, cy] = pts[i]
+  const toward = ([x, y]: [number, number]): [number, number] => {
+    const len = Math.hypot(x - cx, y - cy)
+    return [cx + ((x - cx) / len) * c, cy + ((y - cy) / len) * c]
+  }
+  return [...pts.slice(0, i), toward(pts[(i - 1 + n) % n]), toward(pts[(i + 1) % n]), ...pts.slice(i + 1)]
+}
+
+// Applies chamfers from the highest index down so earlier indices stay put.
+function chamferCorners(pts: Profile, corners: number[], c: number): Profile {
+  return [...corners].sort((a, b) => b - a).reduce((acc, i) => chamferCorner(acc, i, c), pts)
+}
+
 export function outerProfile(p: BearingParams, g = raceGeometry(p)): Profile {
   const h = p.width / 2
   const f = p.flat / 2
   const R = p.od / 2
   const land = p.outer_id / 2
-  return [
-    [R, -h],
-    [R, h],
-    [land, h],
-    [land, g.outerMouth],
-    [g.outerFlatR, f],
-    [g.outerFlatR, -f],
-    [land, -g.outerMouth],
-    [land, -h],
-  ]
+  // the flange is a step out to flange_od over the top flange_t of the ring
+  const outside: Profile = p.flange
+    ? [
+        [R, -h],
+        [R, h - p.flange_t],
+        [p.flange_od / 2, h - p.flange_t],
+        [p.flange_od / 2, h],
+      ]
+    : [
+        [R, -h],
+        [R, h],
+      ]
+  // chamfer the outside corners: bottom of the OD, and the flange or OD top
+  const corners = p.flange ? [0, 2, 3] : [0, 1]
+  return chamferCorners(
+    [
+      ...outside,
+      [land, h],
+      [land, g.outerMouth],
+      [g.outerFlatR, f],
+      [g.outerFlatR, -f],
+      [land, -g.outerMouth],
+      [land, -h],
+    ],
+    corners,
+    p.chamfer,
+  )
 }
 
 // boreR is overridable so a hex bore can start from a smaller round hole
@@ -401,16 +503,22 @@ export function innerProfile(p: BearingParams, g = raceGeometry(p), boreR = bore
   const h = p.width / 2
   const f = p.flat / 2
   const land = p.inner_od / 2
-  return [
-    [boreR, -h],
-    [boreR, h],
-    [land, h],
-    [land, g.innerMouth],
-    [g.innerFlatR, f],
-    [g.innerFlatR, -f],
-    [land, -g.innerMouth],
-    [land, -h],
-  ]
+  // bore edges get the chamfer, except a hex bore, which is cut in later
+  const c = p.bore_shape === BORE.HEX ? 0 : p.chamfer
+  return chamferCorners(
+    [
+      [boreR, -h],
+      [boreR, h],
+      [land, h],
+      [land, g.innerMouth],
+      [g.innerFlatR, f],
+      [g.innerFlatR, -f],
+      [land, -g.innerMouth],
+      [land, -h],
+    ],
+    [0, 1],
+    c,
+  )
 }
 
 function distToSegment(px: number, py: number, [ax, ay]: [number, number], [bx, by]: [number, number]): number {
@@ -458,6 +566,12 @@ export function boltCircle(diameter: number, startDeg: number, n: number): [numb
 // change shape, bump SCHEMA_VER and add a step here that upgrades old params,
 // so old share links keep opening.
 export function migrateInputs(schemaVer: number, params: unknown): unknown {
-  if (schemaVer === SCHEMA_VER) return params
-  return null
+  if (typeof params !== 'object' || params === null) return null
+  let p = params as Record<string, unknown>
+  // v1 -> v2: chamfer, counterbore and flange added; off keeps old designs identical
+  if (schemaVer === 1) {
+    p = { ...p, chamfer: 0, counterbore: 0, flange: 0 }
+    schemaVer = 2
+  }
+  return schemaVer === SCHEMA_VER ? p : null
 }

@@ -315,7 +315,7 @@ export default function App() {
       </aside>
 
       <main className="stage">
-        <Viewer bodies={bodies} balls={balls} size={params.od} section={section} resetSignal={resetSignal} ghost={!validation.ok} />
+        <Viewer bodies={bodies} balls={balls} size={params.flange ? params.flange_od : params.od} section={section} resetSignal={resetSignal} ghost={!validation.ok} />
 
         <div className="toolbar">
           <button onClick={() => setResetSignal((n) => n + 1)}>Reset view</button>

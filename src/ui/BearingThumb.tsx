@@ -30,16 +30,17 @@ function borePath(p: BearingParams): string | null {
 }
 
 export function BearingThumb({ p, size = 120 }: Props) {
-  const R = p.od / 2
+  const R = (p.flange ? p.flange_od : p.od) / 2
   const bore = borePath(p)
   const holes = p.hole_d > 0
   return (
     <svg viewBox={`${-R * 1.05} ${-R * 1.05} ${R * 2.1} ${R * 2.1}`} width={size} height={size} aria-hidden="true">
+      {p.flange ? <circle r={R} className="thumb-flange" /> : null}
       {/* outer ring, drawn as a thick annulus via evenodd */}
       <path
         fillRule="evenodd"
         className="thumb-outer"
-        d={`M${R},0 A${R},${R} 0 1 0 ${-R},0 A${R},${R} 0 1 0 ${R},0 Z
+        d={`M${p.od / 2},0 A${p.od / 2},${p.od / 2} 0 1 0 ${-p.od / 2},0 A${p.od / 2},${p.od / 2} 0 1 0 ${p.od / 2},0 Z
             M${p.outer_id / 2},0 A${p.outer_id / 2},${p.outer_id / 2} 0 1 1 ${-p.outer_id / 2},0 A${p.outer_id / 2},${p.outer_id / 2} 0 1 1 ${p.outer_id / 2},0 Z`}
       />
       <circle r={p.inner_od / 2} className="thumb-inner" />
@@ -58,7 +59,12 @@ export function BearingThumb({ p, size = 120 }: Props) {
       {bore ? <path d={bore} className="thumb-bore" /> : <circle r={boreDiameter(p) / 2} className="thumb-bore" />}
       {holes &&
         [...boltCircle(p.inner_bolt_d, p.inner_bolt_angle, p.hole_n), ...boltCircle(p.outer_bolt_d, p.outer_bolt_angle, p.hole_n)].map(
-          ([x, z], i) => <circle key={i} cx={x} cy={z} r={p.hole_d / 2} className="thumb-bore" />,
+          ([x, z], i) => (
+            <g key={i}>
+              {p.counterbore ? <circle cx={x} cy={z} r={p.cb_d / 2} className="thumb-cb" /> : null}
+              <circle cx={x} cy={z} r={p.hole_d / 2} className="thumb-bore" />
+            </g>
+          ),
         )}
     </svg>
   )

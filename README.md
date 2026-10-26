@@ -29,6 +29,8 @@ produces the same rings (volumes match the CadQuery STEP files to 0.005 mm³).
   OD and width, then fits the balls and holes to them.
 - **Share links and a gallery** of designs other people saved, with download
   counts.
+- **Finishing:** edge chamfers (for elephant's foot and a lead-in), counterbored
+  bolt holes sized for socket head screws, and an optional outer flange.
 - Undo/redo, section view, STEP and STL per ring.
 
 ## How the bearing is built
@@ -174,6 +176,6 @@ npm run api:dev             # Worker on http://127.0.0.1:8787
 - [x] Standard sizes and share links (Cloudflare Worker + D1)
 - [x] Geometry in a Web Worker with a parameter cache
 - [x] Gallery of shared designs with download counts
-- [ ] Edge chamfers, counterbored bolt holes, outer flange
+- [x] Edge chamfers, counterbored bolt holes, outer flange
 - [ ] Spur gear, MG996R servo mount
 - [ ] Geometry engine in C++/WebAssembly (Manifold), benchmarked against this one

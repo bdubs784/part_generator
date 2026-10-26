@@ -5,6 +5,7 @@ import {
   FIELDS,
   maxBalls,
   maxFlat,
+  migrateInputs,
   PARAMS,
   PRESETS,
   resolveBearing,
@@ -201,5 +202,55 @@ describe('parseBearingInputs', () => {
     const missing: Partial<BearingInputs> = { ...DEFAULT_INPUTS }
     delete missing.od
     expect(parseBearingInputs(missing)).toBeNull()
+  })
+})
+
+describe('finishing options', () => {
+  it('auto designs with chamfer, counterbores and a flange are clean', () => {
+    // the tower envelope has room for counterbored M2s, not M3s
+    expect(auto({ counterbore: 1, hole_d: 2.4 }).issues).toEqual([])
+    expect(auto({ flange: 1 }).issues).toEqual([])
+    expect(auto({ chamfer: 0.8, flange: 1 }).issues).toEqual([])
+  })
+
+  it('says when counterbores for the screw size do not fit', () => {
+    const r = auto({ counterbore: 1, hole_d: 3.4 })
+    expect(r.ok).toBe(false)
+    expect(messages(r)).toMatch(/Counterbores for this screw size don't fit/)
+  })
+
+  it('sizes counterbores from the ISO head table', () => {
+    const p = resolveBearing({ ...DEFAULT_INPUTS, hole_d: 3.4, counterbore: 1 })
+    expect(p.cb_d).toBe(6.1) // M3 head 5.5 + 0.6
+    expect(p.cb_depth).toBe(3.2)
+  })
+
+  it('keeps chamfers to a corner', () => {
+    expect(tower({ chamfer: 0.8 }).ok).toBe(true)
+    expect(tower({ chamfer: 2, width: 3.6, ball_d: 3 }).ok).toBe(false)
+  })
+
+  it('needs a real flange lip and ring under it', () => {
+    expect(tower({ flange: 1, flange_od: 92, flange_t: 2 }).ok).toBe(false)
+    expect(tower({ flange: 1, flange_od: 100, flange_t: 6 }).ok).toBe(false)
+    expect(tower({ flange: 1, flange_od: 100, flange_t: 2 }).ok).toBe(true)
+  })
+})
+
+describe('migrateInputs', () => {
+  it('upgrades v1 designs without changing their geometry', () => {
+    const v1 = { ...PRESETS[0].inputs } as Record<string, unknown>
+    delete v1.chamfer
+    delete v1.counterbore
+    delete v1.flange
+    expect(parseBearingInputs(v1)).toBeNull() // old shape alone no longer parses
+    const upgraded = parseBearingInputs(migrateInputs(1, v1))
+    expect(upgraded).toMatchObject({ chamfer: 0, counterbore: 0, flange: 0 })
+    expect(resolveBearing(upgraded!)).toEqual(resolveBearing(PRESETS[0].inputs))
+  })
+
+  it('refuses versions it does not know', () => {
+    expect(migrateInputs(99, DEFAULT_INPUTS)).toBeNull()
+    expect(migrateInputs(1, null)).toBeNull()
   })
 })

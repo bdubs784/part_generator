@@ -504,3 +504,11 @@ legend {
 .thumb-bore {
   fill: var(--panel);
 }
+
+.thumb-flange {
+  fill: #a7b7c9;
+}
+
+.thumb-cb {
+  fill: #5d728a;
+}

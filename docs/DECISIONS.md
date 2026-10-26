@@ -252,3 +252,32 @@ The 24 standard sizes were checked one by one against NSK's product pages
 (Oct 2026). All matched except the 688: the open bearing is 8 × 16 × 4, and
 the 5 mm width I'd seeded is the shielded 688ZZ. Applied migrations are never
 edited, so the fix is `0003_fix_688_width.sql`.
+
+## Chamfers, counterbores, flange (schema v2)
+
+- **Chamfers** are cut into the 2D cross-section (bore edges on the inner
+  ring, OD and flange edges on the outer ring) rather than applied to 3D
+  edges afterwards. Any engine that revolves the shared profile gets them for
+  free, and the groove-side corners are left alone because the lips are
+  already thin. Hex bores skip it (the hex is cut in after revolving).
+  They're ignored in the bolt hole wall checks: a 45° corner only thins the
+  very face, and counting it would fail the tower's 1.5 mm walls for no
+  structural reason.
+- **Counterbores** are sized from the ISO 4762 socket head table (head + 0.6 mm,
+  depth = screw size + 0.2 mm), on the top face since the notch is on the
+  bottom. All the wall checks run again at the counterbore radius, plus a
+  floor under the head. The tower bearing only has room for counterbored M2s.
+- **Flange** is a step in the outer ring's profile over its top `flange_t`.
+
+Adding inputs changes what a saved design looks like, so `SCHEMA_VER` went to
+2 and `migrateInputs()` upgrades v1 designs by turning the new options off.
+Old share links open exactly as they were (tested by resolving a stripped v1
+preset and comparing with the original).
+
+## One boolean cut per ring
+
+Each `cut()` re-processes the whole ring, so cutting holes one at a time
+scaled with the hole count. Holes, counterbores and the notch are now
+collected into one compound and cut in a single boolean. Measured in Node
+(median of 5, both rings): default bearing 925 → 786 ms, with counterbores
+and a flange 1681 → 1205 ms. Volumes are unchanged to 0.005 mm³.

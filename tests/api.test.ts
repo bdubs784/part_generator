@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it } from 'vitest'
 import { handle } from '../backend/index'
 import type { Env } from '../backend/db'
 import { MAX_WRITES } from '../backend/ratelimit'
-import { DEFAULT_INPUTS, PRESETS } from '../shared/bearing'
+import { DEFAULT_INPUTS, PRESETS, SCHEMA_VER } from '../shared/bearing'
 import { createTestDb } from './sqliteD1'
 
 const SITE = 'https://bdubs784.github.io/part_generator/'
@@ -104,7 +104,7 @@ describe('GET /api/designs/:id', () => {
     const res = await call(`/api/designs/${id}`)
     expect(res.status).toBe(200)
     const body = await res.json()
-    expect(body).toMatchObject({ id, part_type: 'bearing', schema_ver: 1 })
+    expect(body).toMatchObject({ id, part_type: 'bearing', schema_ver: SCHEMA_VER })
     expect(body.params).toEqual(preset)
   })
 
@@ -131,7 +131,7 @@ describe('GET /api/designs (gallery)', () => {
     const ids = await saveMany(3)
     const { designs, next } = await (await call('/api/designs?sort=recent&limit=20')).json()
     expect(designs.map((d: { id: string }) => d.id)).toEqual([...ids].reverse())
-    expect(designs[0]).toMatchObject({ part_type: 'bearing', downloads: 0, schema_ver: 1 })
+    expect(designs[0]).toMatchObject({ part_type: 'bearing', downloads: 0, schema_ver: SCHEMA_VER })
     expect(designs[0].params.play).toBeCloseTo(0.02)
     expect(next).toBeNull()
   })

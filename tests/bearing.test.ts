@@ -122,3 +122,41 @@ describe('bearing solids', () => {
     expect(diff).toBeCloseTo(2 * holeVol, 1)
   })
 })
+
+describe('finishing options', () => {
+  const base = { ...PRESETS[0].inputs, fill_notch: 0, hole_d: 0 }
+  const vol = (over: object) => measureVolume(buildOuterRing(resolveBearing({ ...base, ...over })))
+  const volIn = (over: object) => measureVolume(buildInnerRing(resolveBearing({ ...base, ...over })))
+
+  it('a chamfer takes a 45 deg triangle off each edge it touches', () => {
+    // outer ring: two OD edges at R = 45.85, triangle area c^2/2 swept around
+    const c = 0.5
+    const R = 91.7 / 2
+    const ring = (r: number) => 2 * Math.PI * r * (c * c) / 2
+    // the triangle's centroid sits c/3 in from the OD
+    expect(vol({}) - vol({ chamfer: c })).toBeCloseTo(2 * ring(R - c / 3), 1)
+    expect(volIn({}) - volIn({ chamfer: c })).toBeGreaterThan(0)
+  })
+
+  it('a flange adds its annulus', () => {
+    const v = vol({ flange: 1, overrides: { ...base.overrides, flange_od: 100, flange_t: 2 } }) - vol({})
+    expect(v).toBeCloseTo((Math.PI / 4) * (100 ** 2 - 91.7 ** 2) * 2, 0)
+  })
+
+  it('counterbores remove the head pockets', () => {
+    const holes = { hole_d: 2.4, hole_n: 4 }
+    const p = resolveBearing({ ...base, ...holes, counterbore: 1 })
+    const diff = vol(holes) - vol({ ...holes, counterbore: 1 })
+    const pocket = (Math.PI / 4) * (p.cb_d ** 2 - 2.4 ** 2) * p.cb_depth
+    expect(diff).toBeCloseTo(4 * pocket, 0)
+  })
+
+  it('all options together still make valid solids', () => {
+    const oc = getOC()
+    const p = resolveBearing({ ...PRESETS[0].inputs, chamfer: 0.5, flange: 1, hole_d: 2.4, counterbore: 1, overrides: {} })
+    for (const ring of [buildInnerRing(p), buildOuterRing(p)]) {
+      expect(ring.solids.length).toBe(1)
+      expect(new oc.BRepCheck_Analyzer(ring.wrapped, true, false, false).IsValid()).toBe(true)
+    }
+  })
+})

@@ -5,7 +5,7 @@
 // Pure functions: params in, replicad shapes out. setOC() has to have been
 // called before any of this runs (see oc.ts).
 
-import { draw, drawPolysides, makeBox, makeCylinder, type Shape3D, type Sketch } from 'replicad'
+import { draw, drawPolysides, makeBox, makeCompound, makeCylinder, type Shape3D, type Sketch } from 'replicad'
 import {
   boltCircle,
   BORE,
@@ -32,30 +32,42 @@ function revolveProfile(pts: Profile): Shape3D {
   return sketch.revolve([0, 1, 0])
 }
 
-function cutHoles(ring: Shape3D, holes: [number, number][], hole_d: number, width: number): Shape3D {
-  if (hole_d <= 0) return ring
-  const len = width + 2
-  for (const [x, z] of holes) {
-    ring = ring.cut(makeCylinder(hole_d / 2, len, [x, -len / 2, z], [0, 1, 0]))
-  }
-  return ring
+// Cutting tools for the bolt holes: a through hole each, with its counterbore
+// fused on from the top (+Y) face if they're on.
+function holeTools(holes: [number, number][], p: BearingParams): Shape3D[] {
+  if (p.hole_d <= 0) return []
+  const len = p.width + 2
+  return holes.map(([x, z]) => {
+    const hole: Shape3D = makeCylinder(p.hole_d / 2, len, [x, -len / 2, z], [0, 1, 0])
+    if (!p.counterbore) return hole
+    const floor = p.width / 2 - p.cb_depth
+    return hole.fuse(makeCylinder(p.cb_d / 2, p.cb_depth + 1, [x, floor, z], [0, 1, 0]))
+  })
 }
 
 // Rectangular notch in the bottom face, centred on +X, spanning radius r0..r1.
-function cutNotch(ring: Shape3D, p: BearingParams, r0: number, r1: number): Shape3D {
-  if (!p.fill_notch) return ring
+function notchTool(p: BearingParams, r0: number, r1: number): Shape3D[] {
+  if (!p.fill_notch) return []
   const y0 = -p.width / 2
   // start a hair below the face so the cut doesn't leave a zero-thickness skin
-  const box = makeBox([r0, y0 - 0.01, -p.notch_w / 2], [r1, y0 + p.notch_h, p.notch_w / 2])
-  return ring.cut(box)
+  return [makeBox([r0, y0 - 0.01, -p.notch_w / 2], [r1, y0 + p.notch_h, p.notch_w / 2])]
+}
+
+// One boolean with every tool in a compound, instead of one cut per hole:
+// each cut re-processes the whole ring, so batching them is much faster.
+function cutAll(ring: Shape3D, tools: Shape3D[]): Shape3D {
+  if (tools.length === 0) return ring
+  return ring.cut(makeCompound(tools) as Shape3D)
 }
 
 export function buildOuterRing(p: BearingParams): Shape3D {
   const g = raceGeometry(p)
-  let ring = revolveProfile(outerProfile(p, g))
-  ring = cutHoles(ring, boltCircle(p.outer_bolt_d, p.outer_bolt_angle, p.hole_n), p.hole_d, p.width)
-  // from inside the ring gap out to just past the outer race flat
-  return cutNotch(ring, p, p.inner_od / 2, g.outerFlatR + NOTCH_OVERCUT)
+  const ring = revolveProfile(outerProfile(p, g))
+  return cutAll(ring, [
+    ...holeTools(boltCircle(p.outer_bolt_d, p.outer_bolt_angle, p.hole_n), p),
+    // from inside the ring gap out to just past the outer race flat
+    ...notchTool(p, p.inner_od / 2, g.outerFlatR + NOTCH_OVERCUT),
+  ])
 }
 
 // Hex prism along Y, across flats = af. drawPolysides takes the corner radius.
@@ -85,10 +97,11 @@ function cutBore(p: BearingParams, g: ReturnType<typeof raceGeometry>): Shape3D 
 
 export function buildInnerRing(p: BearingParams): Shape3D {
   const g = raceGeometry(p)
-  let ring = cutBore(p, g)
-  ring = cutHoles(ring, boltCircle(p.inner_bolt_d, p.inner_bolt_angle, p.hole_n), p.hole_d, p.width)
-  // from just inside the inner race flat out into the ring gap
-  return cutNotch(ring, p, g.innerFlatR - NOTCH_OVERCUT, p.outer_id / 2)
+  return cutAll(cutBore(p, g), [
+    ...holeTools(boltCircle(p.inner_bolt_d, p.inner_bolt_angle, p.hole_n), p),
+    // from just inside the inner race flat out into the ring gap
+    ...notchTool(p, g.innerFlatR - NOTCH_OVERCUT, p.outer_id / 2),
+  ])
 }
 
 export function buildBearing(p: BearingParams): BearingShapes {

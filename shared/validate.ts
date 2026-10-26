@@ -142,12 +142,53 @@ export function validateBearing(p: BearingParams): ValidationResult<ParamKey> {
         'hole_d',
       )
     }
+
+    // Counterbores: same walls, but at the head's radius over the top of the
+    // ring, plus a floor under the head.
+    if (p.counterbore) {
+      const cbr = p.cb_d / 2
+      const topOD = p.flange ? p.flange_od / 2 : p.od / 2
+      const cbBefore = issues.length
+      if (p.cb_d <= p.hole_d) err('Counterbore must be wider than the hole', 'cb_d', 'hole_d')
+      wall(p.width - p.cb_depth, 'Floor under the screw heads', MIN_WALL, 'cb_depth', 'width')
+      wall(ir - cbr - boreR, 'Wall between inner counterbores and bore', MIN_WALL, 'cb_d', 'inner_bolt_d', 'bore')
+      wall(g.innerFlatR - NOTCH_OVERCUT - (ir + cbr), 'Wall between inner counterbores and groove', MIN_WALL, 'cb_d', 'inner_bolt_d')
+      wall(or - cbr - (g.outerFlatR + NOTCH_OVERCUT), 'Wall between outer counterbores and groove', MIN_WALL, 'cb_d', 'outer_bolt_d')
+      wall(topOD - (or + cbr), 'Wall between outer counterbores and OD', MIN_WALL, 'cb_d', 'outer_bolt_d', 'od')
+      const cbGap = (d: number) => d * Math.sin(Math.PI / p.hole_n) - p.cb_d
+      wall(cbGap(p.inner_bolt_d), 'Gap between inner counterbores', MIN_WALL, 'hole_n', 'cb_d')
+      wall(cbGap(p.outer_bolt_d), 'Gap between outer counterbores', MIN_WALL, 'hole_n', 'cb_d')
+      if (issues.length > cbBefore) {
+        err("Counterbores for this screw size don't fit. Turn them off, or use a smaller screw.", 'counterbore')
+      }
+    }
+  }
+
+  // Outer flange: a lip that's actually there, thinner than the ring.
+  if (p.flange) {
+    wall(p.flange_od / 2 - p.od / 2, 'Flange lip', MIN_WALL, 'flange_od')
+    wall(p.flange_t, 'Flange thickness', MIN_WALL, 'flange_t')
+    wall(p.width - p.flange_t, 'Ring below the flange', MIN_WALL, 'flange_t', 'width')
+  }
+
+  // Chamfers only take a corner off; they can't eat a whole face or wall.
+  if (p.chamfer > 0) {
+    const tooBig = (what: string, limit: number, ...params: ParamKey[]) => {
+      if (p.chamfer > limit / 2 + 1e-9) err(`Chamfer is bigger than the ${what} allows`, 'chamfer', ...params)
+    }
+    tooBig('thickness', p.width / 2, 'width')
+    if (p.bore_shape !== BORE.HEX) tooBig('inner ring wall', g.innerFlatR - boreR, 'bore')
+    tooBig('outer ring wall', p.od / 2 - g.outerFlatR, 'od')
+    if (p.flange) {
+      tooBig('flange thickness', p.flange_t, 'flange_t')
+      tooBig('flange lip', p.flange_od / 2 - p.od / 2, 'flange_od')
+    }
   }
 
   return { ok: !issues.some((i) => i.severity === 'error'), issues }
 }
 
-const BASE_KEYS = ['ball_d', 'bore', 'bore_shape', 'bore_fit', 'od', 'play', 'hole_d', 'hole_n', 'fill_notch', 'negative_play'] as const
+const BASE_KEYS = ['chamfer', 'counterbore', 'flange', 'ball_d', 'bore', 'bore_shape', 'bore_fit', 'od', 'play', 'hole_d', 'hole_n', 'fill_notch', 'negative_play'] as const
 
 // For the API: check the shape of an untrusted body before validating values.
 // Unknown keys are dropped; anything missing or non-numeric fails.
