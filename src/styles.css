@@ -367,3 +367,28 @@ legend {
   color: #fff;
   font-weight: 600;
 }
+
+.share {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  border-top: 1px solid var(--line);
+  padding-top: 6px;
+}
+
+.share input {
+  font: inherit;
+  font-size: 12px;
+  width: 230px;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  padding: 4px 6px;
+}
+
+.share-error {
+  color: var(--err);
+  font-size: 12px;
+  max-width: 220px;
+}

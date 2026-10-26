@@ -3,7 +3,8 @@ import type { Shape3D } from 'replicad'
 import { initOC } from './geometry/oc'
 import { meshShape, type MeshData } from './geometry/mesh'
 import { bearing } from './geometry/registry'
-import { raceGeometry, type BearingInputs, type BearingParams } from '../shared/bearing'
+import { migrateInputs, raceGeometry, type BearingInputs, type BearingParams } from '../shared/bearing'
+import { parseBearingInputs } from '../shared/validate'
 import { clearOverride, fieldRange, isOverridden, optionValid, setField } from '../shared/form'
 import { fitAround, type FitChange } from '../shared/fit'
 import type { FieldDef, Severity } from '../shared/params'
@@ -12,6 +13,8 @@ import type { FieldState } from './ui/ParamField'
 import { Viewer, type Ball, type Body } from './ui/Viewer'
 import { Downloads } from './ui/Downloads'
 import { useHistory } from './ui/useHistory'
+import { Share, type ShareState } from './ui/Share'
+import { apiConfigured, fetchCatalog, loadDesign, saveDesign, shareUrl, type CatalogBearing } from './api/client'
 
 const COLORS: Record<string, string> = { inner_ring: '#c7ccd4', outer_ring: '#7f97b2' }
 
@@ -48,6 +51,8 @@ export default function App() {
   const [fitNote, setFitNote] = useState<string | null>(null)
   const [section, setSection] = useState(false)
   const [resetSignal, setResetSignal] = useState(0)
+  const [catalog, setCatalog] = useState<CatalogBearing[]>([])
+  const [share, setShare] = useState<ShareState & { inputs?: BearingInputs }>({ status: 'idle' })
 
   const params = useMemo(() => part.resolve(inputs), [inputs])
   const validation = useMemo(() => part.validate(params), [params])
@@ -119,6 +124,27 @@ export default function App() {
     return () => clearTimeout(timer)
   }, [params, ocState, validation.ok])
 
+  // Standard sizes come from the API. Without it the list just isn't there.
+  useEffect(() => {
+    fetchCatalog().then(setCatalog, () => setCatalog([]))
+  }, [])
+
+  // ?d=<id> opens a saved design
+  const { set: setHistory } = history
+  useEffect(() => {
+    const id = new URLSearchParams(location.search).get('d')
+    if (!id) return
+    loadDesign(id).then(
+      (saved) => {
+        const loaded = parseBearingInputs(migrateInputs(saved.schema_ver, saved.params))
+        if (!loaded) return setFitNote(`Design ${id} was saved by a version this page can't read.`)
+        setHistory({ inputs: loaded, touched: [] })
+        setFitNote(`Opened shared design ${id}.`)
+      },
+      () => setFitNote(`Couldn't open design ${id}. The link may be wrong, or the server is down.`),
+    )
+  }, [setHistory])
+
   // Ctrl+Z / Ctrl+Shift+Z / Ctrl+Y, except while typing in a box
   const { undo, redo } = history
   useEffect(() => {
@@ -136,6 +162,8 @@ export default function App() {
 
   const commit = (next: Design, group = '') => {
     setFitNote(null)
+    // the ?d= link describes the saved design, not this edited one
+    if (location.search) window.history.replaceState(null, '', location.pathname)
     history.set({ ...next, inputs: part.normalize(next.inputs) }, group)
   }
   const touch = (key: string) => [...touched.filter((k) => k !== key), key]
@@ -145,15 +173,18 @@ export default function App() {
   const onReset = (field: FieldDef) =>
     commit({ inputs: clearOverride(inputs, field), touched: touched.filter((k) => k !== field.key) })
 
-  const makeItFit = () => {
-    const result = fitAround(inputs, {
+  const fit = (design: Design) =>
+    fitAround(design.inputs, {
       fields: part.fields,
       defs,
-      pinned: touched,
+      pinned: design.touched,
       order: part.fitOrder,
       resolve: part.resolve,
       validate: part.validate,
     })
+
+  const makeItFit = () => {
+    const result = fit({ inputs, touched })
     commit({ inputs: result.inputs, touched })
     setFitNote(
       result.ok
@@ -161,6 +192,41 @@ export default function App() {
         : "Couldn't find a fit that keeps your edits. Try undoing the last one.",
     )
   }
+
+  // A standard size pins bore, OD and thickness; everything else is fitted to it.
+  const catalogDesign = (b: CatalogBearing): Design => ({
+    inputs: { ...part.defaults, bore: b.bore_mm, bore_fit: 0, od: b.od_mm, overrides: { width: b.width_mm } },
+    touched: ['bore', 'od', 'width'],
+  })
+  const applyCatalog = (b: CatalogBearing) => {
+    const design = catalogDesign(b)
+    const result = fit(design)
+    commit({ ...design, inputs: result.inputs })
+    const size = `${b.designation}: ${b.bore_mm} × ${b.od_mm} × ${b.width_mm} mm`
+    setFitNote(
+      !result.ok
+        ? `${size} is too small for a printed bearing: the walls can't reach the 1.2 mm minimum.`
+        : result.changes.length
+          ? `${size}. To fit it: ${result.changes.map(describeChange).join(', ')}.`
+          : `${size}.`,
+    )
+  }
+
+  // which standard sizes can be printed at all, worked out once per catalog load
+  const printable = useMemo(() => new Set(catalog.filter((b) => fit(catalogDesign(b)).ok).map((b) => b.designation)), [catalog])
+
+  const onShare = () => {
+    setShare({ status: 'saving' })
+    saveDesign(inputs).then(
+      ({ id }) => {
+        window.history.replaceState(null, '', `?d=${id}`)
+        setShare({ status: 'done', link: shareUrl(id), inputs })
+      },
+      (e) => setShare({ status: 'error', message: e instanceof Error ? e.message : 'Save failed' }),
+    )
+  }
+  // a link only shows while it still matches what's on screen
+  const shareState: ShareState = share.status === 'done' && share.inputs !== inputs ? { status: 'idle' } : share
 
   const bodies: Body[] = model
     ? Object.entries(model.meshes).map(([name, mesh]) => ({ name, mesh, color: COLORS[name] ?? '#aaa' }))
@@ -205,16 +271,33 @@ export default function App() {
           <select
             value=""
             onChange={(e) => {
-              const preset = part.presets.find((pr) => pr.name === e.target.value)
-              if (preset) commit({ inputs: preset.inputs, touched: [] })
+              const [kind, name] = e.target.value.split(':')
+              const preset = part.presets.find((pr) => pr.name === name)
+              const standard = catalog.find((b) => b.designation === name)
+              if (kind === 'preset' && preset) commit({ inputs: preset.inputs, touched: [] })
+              if (kind === 'catalog' && standard) applyCatalog(standard)
             }}
           >
             <option value="" disabled>
-              preset…
+              preset or standard size…
             </option>
-            {part.presets.map((pr) => (
-              <option key={pr.name}>{pr.name}</option>
-            ))}
+            <optgroup label="From my arm">
+              {part.presets.map((pr) => (
+                <option key={pr.name} value={`preset:${pr.name}`}>
+                  {pr.name}
+                </option>
+              ))}
+            </optgroup>
+            {catalog.length > 0 && (
+              <optgroup label="Standard sizes (bore × OD × width)">
+                {catalog.map((b) => (
+                  <option key={b.designation} value={`catalog:${b.designation}`}>
+                    {b.designation}: {b.bore_mm} × {b.od_mm} × {b.width_mm}
+                    {printable.has(b.designation) ? (b.notes ? ` (${b.notes})` : '') : ' (too small to print)'}
+                  </option>
+                ))}
+              </optgroup>
+            )}
           </select>
         </label>
 
@@ -273,7 +356,9 @@ export default function App() {
           </ul>
         )}
 
-        <Downloads shapes={model?.shapes ?? null} disabled={stale || !validation.ok} />
+        <Downloads shapes={model?.shapes ?? null} disabled={stale || !validation.ok}>
+          {apiConfigured && <Share state={shareState} disabled={!validation.ok} onShare={onShare} />}
+        </Downloads>
       </main>
     </div>
   )

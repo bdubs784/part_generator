@@ -1,8 +1,10 @@
+import type { ReactNode } from 'react'
 import type { Shape3D } from 'replicad'
 
 interface Props {
   shapes: Record<string, Shape3D> | null
   disabled: boolean
+  children?: ReactNode
 }
 
 // Same tolerance the CadQuery script exported STLs with.
@@ -17,7 +19,7 @@ function save(blob: Blob, filename: string) {
   setTimeout(() => URL.revokeObjectURL(url), 1000)
 }
 
-export function Downloads({ shapes, disabled }: Props) {
+export function Downloads({ shapes, disabled, children }: Props) {
   if (!shapes) return null
   return (
     <div className="downloads">
@@ -32,6 +34,7 @@ export function Downloads({ shapes, disabled }: Props) {
           </button>
         </div>
       ))}
+      {children}
     </div>
   )
 }

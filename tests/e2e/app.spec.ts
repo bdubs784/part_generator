@@ -60,3 +60,28 @@ test('editing an auto value pins it, reset puts it back', async ({ page }) => {
   await page.getByRole('button', { name: '↺ auto' }).click()
   await expect(thickness).toHaveValue('6.4')
 })
+
+test('picking a standard size fills in its real dimensions and fits the rest', async ({ page }) => {
+  const start = page.getByLabel('Start from')
+  await expect(start.locator('option', { hasText: '608:' })).toHaveCount(1)
+  await start.selectOption({ label: '608: 8 × 22 × 7 (skateboard / spool holders)' })
+  await expect(page.locator('.issues .note')).toContainText('608: 8 × 22 × 7 mm')
+  await expect(page.getByLabel('Bore', { exact: true })).toHaveValue('8')
+  await expect(page.getByLabel('Outer diameter', { exact: true })).toHaveValue('22')
+  await expect(page.getByLabel('Thickness', { exact: true })).toHaveValue('7')
+  await expect(page.locator('.issues .error')).toHaveCount(0)
+  await expect(page.getByTestId('status')).toHaveText(/Built in/)
+})
+
+test('share link saves the design and opening it restores it', async ({ page }) => {
+  await type(page, 'Ball count', '21')
+  await expect(page.getByTestId('status')).toHaveText(/Built in/)
+  await page.getByRole('button', { name: 'Share link' }).click()
+  const link = page.getByLabel('Share link')
+  await expect(link).toHaveValue(/\?d=[a-z2-9]{6}$/)
+  const url = await link.inputValue()
+
+  await page.goto(url)
+  await expect(page.locator('.issues .note')).toContainText('Opened shared design')
+  await expect(page.getByLabel('Ball count', { exact: true })).toHaveValue('21')
+})
