@@ -118,7 +118,7 @@ legend {
   font-size: 13px;
 }
 
-.field label {
+.field .label {
   grid-area: label;
 }
 
@@ -266,4 +266,75 @@ legend {
     border-right: none;
     border-top: 1px solid var(--line);
   }
+}
+
+.field .limits {
+  grid-column: 1 / -1;
+  font-size: 11px;
+  color: var(--muted);
+  margin-top: -2px;
+}
+
+.field.toggle label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.field.select {
+  grid-template-columns: 1fr 160px;
+}
+
+.field.select select {
+  grid-area: num;
+  width: 100%;
+}
+
+.field.select .custom {
+  grid-column: 1 / -1;
+  justify-self: end;
+  width: 96px;
+}
+
+.badge,
+.reset {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  border-radius: 3px;
+  padding: 1px 4px;
+  margin-left: 4px;
+  vertical-align: 1px;
+}
+
+.badge {
+  color: var(--muted);
+  border: 1px solid var(--line);
+}
+
+.reset {
+  color: var(--accent);
+  border: 1px solid var(--accent);
+  background: none;
+}
+
+.advanced {
+  border-top: 1px solid var(--line);
+  padding: 8px 0;
+}
+
+.advanced summary {
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.panel .hint {
+  font-size: 12px;
+  color: var(--muted);
+  margin: 6px 0;
+}
+
+.reset-all {
+  margin-top: 6px;
 }

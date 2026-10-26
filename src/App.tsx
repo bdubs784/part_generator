@@ -3,8 +3,11 @@ import type { Shape3D } from 'replicad'
 import { initOC } from './geometry/oc'
 import { meshShape, type MeshData } from './geometry/mesh'
 import { bearing } from './geometry/registry'
-import { raceGeometry, type BearingParams } from '../shared/bearing'
+import { raceGeometry, type BearingInputs, type BearingParams } from '../shared/bearing'
+import { clearOverride, fieldRange, isOverridden, optionValid, setField } from '../shared/form'
+import type { FieldDef, Severity } from '../shared/params'
 import { ParamPanel } from './ui/ParamPanel'
+import type { FieldState } from './ui/ParamField'
 import { Viewer, type Ball, type Body } from './ui/Viewer'
 import { Downloads } from './ui/Downloads'
 
@@ -18,17 +21,50 @@ interface Model {
 }
 
 const part = bearing
+const defs = new Map(part.params.map((d) => [d.key as string, d]))
 
 export default function App() {
-  const [params, setParams] = useState<BearingParams>(part.defaults)
+  const [inputs, setInputs] = useState<BearingInputs>(part.defaults)
   const [model, setModel] = useState<Model | null>(null)
   const [ocState, setOcState] = useState<'loading' | 'ready' | 'failed'>('loading')
   const [buildError, setBuildError] = useState<string | null>(null)
   const [section, setSection] = useState(false)
   const [resetSignal, setResetSignal] = useState(0)
 
+  const params = useMemo(() => part.resolve(inputs), [inputs])
   const validation = useMemo(() => part.validate(params), [params])
   const race = useMemo(() => raceGeometry(params), [params])
+
+  // Per-field slider limits, auto/override state and issue highlighting.
+  const states = useMemo(() => {
+    const flags = new Map<string, Severity>()
+    for (const issue of validation.issues) {
+      for (const key of issue.params) if (flags.get(key) !== 'error') flags.set(key, issue.severity)
+    }
+    const out = new Map<string, FieldState>()
+    for (const field of part.fields) {
+      const def = defs.get(field.key)!
+      const value = params[field.key]
+      const invalidOptions = new Set<number>()
+      if (field.kind === 'select' && validation.ok) {
+        for (const o of field.options ?? []) {
+          if (!optionValid(inputs, field, o.value, part.resolve, part.validate)) invalidOptions.add(o.value)
+        }
+      }
+      out.set(field.key, {
+        value,
+        range:
+          field.kind === 'number' && validation.ok
+            ? fieldRange(inputs, field, def, value, part.resolve, part.validate)
+            : [def.min, def.max],
+        auto: field.derived === true && !isOverridden(inputs, field),
+        overridden: isOverridden(inputs, field),
+        invalidOptions,
+        flag: flags.get(field.key),
+      })
+    }
+    return out
+  }, [inputs, params, validation])
 
   useEffect(() => {
     initOC().then(
@@ -59,6 +95,10 @@ export default function App() {
     return () => clearTimeout(timer)
   }, [params, ocState, validation.ok])
 
+  const update = (next: BearingInputs) => setInputs(part.normalize(next))
+  const onChange = (field: FieldDef, v: number) => update(setField(inputs, field, v))
+  const onReset = (field: FieldDef) => update(clearOverride(inputs, field))
+
   const bodies: Body[] = model
     ? Object.entries(model.meshes).map(([name, mesh]) => ({ name, mesh, color: COLORS[name] ?? '#aaa' }))
     : []
@@ -88,15 +128,17 @@ export default function App() {
         <label className="preset">
           Start from
           <select
-            defaultValue=""
+            value=""
             onChange={(e) => {
+              if (e.target.value === 'default') return update(part.defaults)
               const preset = part.presets.find((pr) => pr.name === e.target.value)
-              if (preset) setParams(preset.params)
+              if (preset) update(preset.inputs)
             }}
           >
             <option value="" disabled>
               preset…
             </option>
+            <option value="default">Default (all auto)</option>
             {part.presets.map((pr) => (
               <option key={pr.name}>{pr.name}</option>
             ))}
@@ -104,15 +146,18 @@ export default function App() {
         </label>
 
         <ParamPanel
-          defs={part.params}
-          values={params}
-          issues={validation.issues}
-          onChange={(key, v) => setParams((prev) => ({ ...prev, [key]: v }))}
+          fields={part.fields}
+          defs={defs}
+          states={states}
+          onChange={onChange}
+          onReset={onReset}
+          onResetAll={() => update({ ...inputs, overrides: {} })}
+          anyOverrides={Object.keys(inputs.overrides).length > 0}
         />
 
         <p className="info">
-          Up to {race.maxBalls} balls fit. Groove contact at 45°, flats at R{race.innerFlatR.toFixed(3)} / R
-          {race.outerFlatR.toFixed(3)}.
+          Up to {race.maxBalls} balls fit. Ring gap {((params.outer_id - params.inner_od) / 2).toFixed(2)} mm, lips{' '}
+          {(params.width / 2 - race.innerMouth).toFixed(2)} / {(params.width / 2 - race.outerMouth).toFixed(2)} mm.
         </p>
       </aside>
 
