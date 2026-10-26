@@ -154,13 +154,50 @@ ball may sink into each flank by exactly its share of the play
 - Warnings are for things that print fine but might not assemble well
   (narrow notch, negative play).
 
-## Geometry on the main thread (for now)
+## Geometry in a Web Worker
 
-Building both rings takes roughly 650 ms in headless Chromium on my laptop,
-measured from the status line. Rebuilds are debounced 150 ms so dragging a
-slider doesn't queue builds. Moving this into a Web Worker is the first v1
-item; `meshShape` already returns plain typed arrays so they can be posted
-across.
+v0 built on the main thread (~650 ms per change, debounced 150 ms), which
+froze the page mid-drag. Now `src/worker/geometry.worker.ts` owns
+OpenCascade:
+
+- The page posts parameters 60 ms after they settle. The worker coalesces:
+  if new parameters arrive mid-build, only the newest is built next, so a
+  fast drag never builds a backlog. The page ignores any result older than
+  the one it's showing.
+- Meshes come back as plain typed arrays (structured clone, not transfer,
+  because the worker keeps them in its cache).
+- STEP/STL exports are made in the worker from the cached shapes too, so a
+  download doesn't freeze the page either.
+- replicad is only imported by the worker (`src/geometry/builders.ts`), so
+  the main bundle dropped from 1.50 MB to 1.19 MB.
+
+## Cache keyed by the parameters
+
+`createGeometryService` keeps an LRU of 16 builds keyed by the resolved
+params as sorted-key JSON, so field order doesn't matter. A hit skips
+OpenCascade entirely: < 1 ms vs a median 462 ms rebuild. Undo, redo and
+dragging a slider back over values you've passed all hit it. Ball count is
+part of the key even though balls aren't modelled; splitting preview-only
+params out of the key would save a rebuild there, but it's a rare case and
+not worth the extra concept yet.
+
+Builders return one function per body so each ring is timed on its own (the
+status line tooltip shows them).
+
+## Gallery thumbnails are SVG drawn from the params
+
+Rendering a PNG on save and uploading it would mean storing blobs and
+accepting untrusted images. Instead, `BearingThumb` draws a top view (rings,
+balls, bore shape, holes) from the saved params: nothing to store, a few
+hundred bytes, and always consistent with the current geometry rules.
+Saved designs are numbers only, so the public gallery has no user text to
+moderate.
+
+The listing is keyset-paginated on `(created_at, id)` with an opaque cursor,
+so pages don't shift when someone saves while you scroll. Download counts go
+up when a saved design (opened from a link or the gallery, or just shared)
+is downloaded; a separate, looser rate limit (120 per 10 minutes per IP)
+keeps the counter from being pumped.
 
 ## OrbitControls without drei
 
