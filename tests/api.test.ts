@@ -115,10 +115,62 @@ describe('GET /api/designs/:id', () => {
   })
 })
 
+describe('GET /api/designs (gallery)', () => {
+  // distinct designs, saved one after another
+  const saveMany = async (n: number) => {
+    const ids: string[] = []
+    for (let i = 0; i < n; i++) {
+      const { id } = await (await save({ part_type: 'bearing', params: { ...DEFAULT_INPUTS, play: 0.01 * i } })).json()
+      ids.push(id)
+      await new Promise((r) => setTimeout(r, 2)) // distinct created_at
+    }
+    return ids
+  }
+
+  it('lists newest first with params and download counts', async () => {
+    const ids = await saveMany(3)
+    const { designs, next } = await (await call('/api/designs?sort=recent&limit=20')).json()
+    expect(designs.map((d: { id: string }) => d.id)).toEqual([...ids].reverse())
+    expect(designs[0]).toMatchObject({ part_type: 'bearing', downloads: 0, schema_ver: 1 })
+    expect(designs[0].params.play).toBeCloseTo(0.02)
+    expect(next).toBeNull()
+  })
+
+  it('pages with a cursor and no overlap', async () => {
+    const ids = await saveMany(5)
+    const first = await (await call('/api/designs?limit=2')).json()
+    const second = await (await call(`/api/designs?limit=2&before=${encodeURIComponent(first.next)}`)).json()
+    const third = await (await call(`/api/designs?limit=2&before=${encodeURIComponent(second.next)}`)).json()
+    const seen = [...first.designs, ...second.designs, ...third.designs].map((d: { id: string }) => d.id)
+    expect(seen).toEqual([...ids].reverse())
+    expect(third.next).toBeNull()
+  })
+
+  it('rejects bad query params', async () => {
+    expect((await call('/api/designs?limit=0')).status).toBe(400)
+    expect((await call('/api/designs?limit=500')).status).toBe(400)
+    expect((await call('/api/designs?sort=popular')).status).toBe(400)
+    expect((await call('/api/designs?before=garbage')).status).toBe(400)
+  })
+})
+
+describe('POST /api/designs/:id/download', () => {
+  it('counts downloads', async () => {
+    const { id } = await (await save({ part_type: 'bearing', params: DEFAULT_INPUTS })).json()
+    expect((await call(`/api/designs/${id}/download`, { method: 'POST' })).status).toBe(204)
+    expect((await call(`/api/designs/${id}/download`, { method: 'POST' })).status).toBe(204)
+    expect((await (await call(`/api/designs/${id}`)).json()).downloads).toBe(2)
+  })
+
+  it('404s for unknown designs', async () => {
+    expect((await call('/api/designs/zzzzzz/download', { method: 'POST' })).status).toBe(404)
+  })
+})
+
 describe('routing and CORS', () => {
   it('404s unknown paths and 405s wrong methods', async () => {
     expect((await call('/api/nope')).status).toBe(404)
-    expect((await call('/api/designs')).status).toBe(405)
+    expect((await call('/api/designs', { method: 'PUT' })).status).toBe(405)
   })
 
   it('allows the Pages site and localhost', async () => {

@@ -62,3 +62,29 @@ export async function saveDesign(
   }
   throw new Error('could not allocate a design id')
 }
+
+export interface Cursor {
+  created_at: string
+  id: string
+}
+
+// Newest first, keyset-paginated: "before" is the last row of the previous
+// page, so pages don't shift when new designs are saved in between.
+export async function listRecent(db: Db, limit: number, before?: Cursor): Promise<DesignRow[]> {
+  const { results } = before
+    ? await db
+        .prepare('SELECT * FROM designs WHERE (created_at, id) < (?, ?) ORDER BY created_at DESC, id DESC LIMIT ?')
+        .bind(before.created_at, before.id, limit)
+        .all<DesignRow>()
+    : await db.prepare('SELECT * FROM designs ORDER BY created_at DESC, id DESC LIMIT ?').bind(limit).all<DesignRow>()
+  return results
+}
+
+// Returns false if there's no such design.
+export async function countDownload(db: Db, id: string): Promise<boolean> {
+  const row = await db
+    .prepare('UPDATE designs SET downloads = downloads + 1 WHERE id = ? RETURNING downloads')
+    .bind(id)
+    .first<{ downloads: number }>()
+  return row !== null
+}
