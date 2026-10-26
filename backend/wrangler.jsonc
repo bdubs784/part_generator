@@ -8,7 +8,7 @@
       "binding": "DB",
       "database_name": "part-generator",
       // from `npx wrangler d1 create part-generator`; not a secret
-      "database_id": "00000000-0000-0000-0000-000000000000",
+      "database_id": "4343ca72-c9f7-445c-aae8-a364cfcd4a6e",
       "migrations_dir": "migrations"
     }
   ],
