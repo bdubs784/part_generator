@@ -27,6 +27,8 @@ export interface PartType<I extends WithOverrides, P extends object> {
   resolve: (inputs: I) => P
   // Fix-ups after any edit, e.g. turning off negative play clears it.
   normalize: (inputs: I) => I
+  // Untouched fields "Make it fit" may change, most expendable first.
+  fitOrder: (keyof P & string)[]
   validate: (p: P) => ValidationResult<keyof P & string>
   // Named bodies, each one becomes its own STEP/STL download.
   build: (p: P) => Record<string, Shape3D>
@@ -41,6 +43,9 @@ export const bearing: PartType<BearingInputs, BearingParams> = {
   fields: FIELDS,
   resolve: resolveBearing,
   normalize: (i) => (!i.negative_play && i.play < 0 ? { ...i, play: 0 } : i),
+  // holes are an accessory, the shaft and ball size usually aren't negotiable,
+  // and the OD is the envelope it has to fit in
+  fitOrder: ['hole_d', 'hole_n', 'bore', 'ball_d', 'od'],
   validate: validateBearing,
   build: (p) => {
     const { inner, outer } = buildBearing(p)

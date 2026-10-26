@@ -21,13 +21,14 @@ interface Props {
   size: number // rough model diameter, for framing the camera
   section: boolean
   resetSignal: number
+  ghost: boolean // last good model, shown faded while the inputs are broken
 }
 
 // Section view keeps the -Z half, so the cut faces point at the default camera.
 // The cut runs through the fill notch on +X and the plain groove on -X.
 const SECTION_PLANE = new THREE.Plane(new THREE.Vector3(0, 0, -1), 0)
 
-function BodyMesh({ mesh, color, section }: { mesh: MeshData; color: string; section: boolean }) {
+function BodyMesh({ mesh, color, section, ghost }: { mesh: MeshData; color: string; section: boolean; ghost: boolean }) {
   const { geometry, edges } = useMemo(() => {
     const geometry = new THREE.BufferGeometry()
     geometry.setAttribute('position', new THREE.BufferAttribute(mesh.positions, 3))
@@ -51,7 +52,16 @@ function BodyMesh({ mesh, color, section }: { mesh: MeshData; color: string; sec
     <group>
       <mesh geometry={geometry}>
         {/* DoubleSide so the inside shows through the section cut */}
-        <meshStandardMaterial color={color} metalness={0.1} roughness={0.6} clippingPlanes={planes} side={THREE.DoubleSide} />
+        <meshStandardMaterial
+          color={color}
+          metalness={0.1}
+          roughness={0.6}
+          clippingPlanes={planes}
+          side={THREE.DoubleSide}
+          transparent={ghost}
+          opacity={ghost ? 0.25 : 1}
+          depthWrite={!ghost}
+        />
       </mesh>
       <lineSegments geometry={edges}>
         <lineBasicMaterial color="#1d2430" clippingPlanes={planes} />
@@ -105,7 +115,7 @@ function Controls({ size, resetSignal }: { size: number; resetSignal: number }) 
   return null
 }
 
-export function Viewer({ bodies, balls, size, section, resetSignal }: Props) {
+export function Viewer({ bodies, balls, size, section, resetSignal, ghost }: Props) {
   return (
     <Canvas
       camera={{ fov: 35, near: 0.5, far: 5000 }}
@@ -118,9 +128,9 @@ export function Viewer({ bodies, balls, size, section, resetSignal }: Props) {
       <directionalLight position={[60, 120, 80]} intensity={1.6} />
       <directionalLight position={[-80, -40, -60]} intensity={0.5} />
       {bodies.map((b) => (
-        <BodyMesh key={b.name} mesh={b.mesh} color={b.color} section={section} />
+        <BodyMesh key={b.name} mesh={b.mesh} color={b.color} section={section} ghost={ghost} />
       ))}
-      <Balls balls={balls} section={section} />
+      {!ghost && <Balls balls={balls} section={section} />}
       <Controls size={size} resetSignal={resetSignal} />
     </Canvas>
   )

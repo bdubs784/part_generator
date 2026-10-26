@@ -5,11 +5,13 @@ import { meshShape, type MeshData } from './geometry/mesh'
 import { bearing } from './geometry/registry'
 import { raceGeometry, type BearingInputs, type BearingParams } from '../shared/bearing'
 import { clearOverride, fieldRange, isOverridden, optionValid, setField } from '../shared/form'
+import { fitAround, type FitChange } from '../shared/fit'
 import type { FieldDef, Severity } from '../shared/params'
 import { ParamPanel } from './ui/ParamPanel'
 import type { FieldState } from './ui/ParamField'
 import { Viewer, type Ball, type Body } from './ui/Viewer'
 import { Downloads } from './ui/Downloads'
+import { useHistory } from './ui/useHistory'
 
 const COLORS: Record<string, string> = { inner_ring: '#c7ccd4', outer_ring: '#7f97b2' }
 
@@ -20,14 +22,30 @@ interface Model {
   ms: number
 }
 
+interface Design {
+  inputs: BearingInputs
+  touched: string[] // fields the user edited, oldest first
+}
+
 const part = bearing
 const defs = new Map(part.params.map((d) => [d.key as string, d]))
+const fieldsByKey = new Map(part.fields.map((f) => [f.key as string, f]))
+
+// "Bolt holes 3 → 2.4", using option labels where there are some
+function describeChange(c: FitChange): string {
+  const def = defs.get(c.key)
+  const field = fieldsByKey.get(c.key)
+  const show = (v: number) => field?.options?.find((o) => o.value === v)?.label ?? `${Number(v.toFixed(3))}`
+  return `${def?.label ?? c.key} ${show(c.from)} → ${show(c.to)}`
+}
 
 export default function App() {
-  const [inputs, setInputs] = useState<BearingInputs>(part.defaults)
+  const history = useHistory<Design>({ inputs: part.defaults, touched: [] })
+  const { inputs, touched } = history.present
   const [model, setModel] = useState<Model | null>(null)
   const [ocState, setOcState] = useState<'loading' | 'ready' | 'failed'>('loading')
   const [buildError, setBuildError] = useState<string | null>(null)
+  const [fitNote, setFitNote] = useState<string | null>(null)
   const [section, setSection] = useState(false)
   const [resetSignal, setResetSignal] = useState(0)
 
@@ -45,10 +63,15 @@ export default function App() {
     for (const field of part.fields) {
       const def = defs.get(field.key)!
       const value = params[field.key]
-      const invalidOptions = new Set<number>()
-      if (field.kind === 'select' && validation.ok) {
+      // Valid design: mark options that would break it.
+      // Broken design: mark the options that would fix it.
+      const breaks = new Set<number>()
+      const fixes = new Set<number>()
+      if (field.kind === 'select') {
         for (const o of field.options ?? []) {
-          if (!optionValid(inputs, field, o.value, part.resolve, part.validate)) invalidOptions.add(o.value)
+          const ok = optionValid(inputs, field, o.value, part.resolve, part.validate)
+          if (validation.ok && !ok) breaks.add(o.value)
+          if (!validation.ok && ok) fixes.add(o.value)
         }
       }
       out.set(field.key, {
@@ -59,7 +82,8 @@ export default function App() {
             : [def.min, def.max],
         auto: field.derived === true && !isOverridden(inputs, field),
         overridden: isOverridden(inputs, field),
-        invalidOptions,
+        breaks,
+        fixes,
         flag: flags.get(field.key),
       })
     }
@@ -95,9 +119,48 @@ export default function App() {
     return () => clearTimeout(timer)
   }, [params, ocState, validation.ok])
 
-  const update = (next: BearingInputs) => setInputs(part.normalize(next))
-  const onChange = (field: FieldDef, v: number) => update(setField(inputs, field, v))
-  const onReset = (field: FieldDef) => update(clearOverride(inputs, field))
+  // Ctrl+Z / Ctrl+Shift+Z / Ctrl+Y, except while typing in a box
+  const { undo, redo } = history
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (!(e.ctrlKey || e.metaKey) || (e.target as HTMLElement).tagName === 'INPUT') return
+      const key = e.key.toLowerCase()
+      if (key === 'z' && !e.shiftKey) undo()
+      else if ((key === 'z' && e.shiftKey) || key === 'y') redo()
+      else return
+      e.preventDefault()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [undo, redo])
+
+  const commit = (next: Design, group = '') => {
+    setFitNote(null)
+    history.set({ ...next, inputs: part.normalize(next.inputs) }, group)
+  }
+  const touch = (key: string) => [...touched.filter((k) => k !== key), key]
+
+  const onChange = (field: FieldDef, v: number) =>
+    commit({ inputs: setField(inputs, field, v), touched: touch(field.key) }, field.key)
+  const onReset = (field: FieldDef) =>
+    commit({ inputs: clearOverride(inputs, field), touched: touched.filter((k) => k !== field.key) })
+
+  const makeItFit = () => {
+    const result = fitAround(inputs, {
+      fields: part.fields,
+      defs,
+      pinned: touched,
+      order: part.fitOrder,
+      resolve: part.resolve,
+      validate: part.validate,
+    })
+    commit({ inputs: result.inputs, touched })
+    setFitNote(
+      result.ok
+        ? `Changed ${result.changes.map(describeChange).join(', ')}. Undo puts it back.`
+        : "Couldn't find a fit that keeps your edits. Try undoing the last one.",
+    )
+  }
 
   const bodies: Body[] = model
     ? Object.entries(model.meshes).map(([name, mesh]) => ({ name, mesh, color: COLORS[name] ?? '#aaa' }))
@@ -125,20 +188,30 @@ export default function App() {
           <p className="sub">{part.name}</p>
         </header>
 
+        <div className="history">
+          <button onClick={history.undo} disabled={!history.canUndo} title="Ctrl+Z">
+            Undo
+          </button>
+          <button onClick={history.redo} disabled={!history.canRedo} title="Ctrl+Shift+Z">
+            Redo
+          </button>
+          <button onClick={() => commit({ inputs: part.defaults, touched: [] })} title="Back to the default bearing">
+            Start over
+          </button>
+        </div>
+
         <label className="preset">
           Start from
           <select
             value=""
             onChange={(e) => {
-              if (e.target.value === 'default') return update(part.defaults)
               const preset = part.presets.find((pr) => pr.name === e.target.value)
-              if (preset) update(preset.inputs)
+              if (preset) commit({ inputs: preset.inputs, touched: [] })
             }}
           >
             <option value="" disabled>
               preset…
             </option>
-            <option value="default">Default (all auto)</option>
             {part.presets.map((pr) => (
               <option key={pr.name}>{pr.name}</option>
             ))}
@@ -151,7 +224,7 @@ export default function App() {
           states={states}
           onChange={onChange}
           onReset={onReset}
-          onResetAll={() => update({ ...inputs, overrides: {} })}
+          onResetAll={() => commit({ inputs: { ...inputs, overrides: {} }, touched })}
           anyOverrides={Object.keys(inputs.overrides).length > 0}
         />
 
@@ -162,7 +235,7 @@ export default function App() {
       </aside>
 
       <main className="stage">
-        <Viewer bodies={bodies} balls={balls} size={params.od} section={section} resetSignal={resetSignal} />
+        <Viewer bodies={bodies} balls={balls} size={params.od} section={section} resetSignal={resetSignal} ghost={!validation.ok} />
 
         <div className="toolbar">
           <button onClick={() => setResetSignal((n) => n + 1)}>Reset view</button>
@@ -177,8 +250,9 @@ export default function App() {
           </span>
         </div>
 
-        {(errors.length > 0 || warnings.length > 0 || buildError) && (
+        {(errors.length > 0 || warnings.length > 0 || buildError || fitNote) && (
           <ul className="issues" aria-live="polite">
+            {fitNote && <li className="note">{fitNote}</li>}
             {buildError && <li className="error">{buildError}</li>}
             {errors.map((i) => (
               <li key={i.message} className="error">
@@ -190,7 +264,12 @@ export default function App() {
                 {i.message}
               </li>
             ))}
-            {errors.length > 0 && <li className="hint">Preview and downloads are paused until the errors are fixed.</li>}
+            {errors.length > 0 && (
+              <li className="fix">
+                <button onClick={makeItFit}>Make it fit</button>
+                <span>keeps what you changed, adjusts the rest</span>
+              </li>
+            )}
           </ul>
         )}
 
