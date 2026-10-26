@@ -11,6 +11,7 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:e2e": "playwright test",
+    "engine:build": "bash engine/build.sh",
     "api:dev": "wrangler dev -c backend/wrangler.jsonc --port 8787 --ip 127.0.0.1",
     "api:migrate:local": "wrangler d1 migrations apply part-generator --local -c backend/wrangler.jsonc",
     "api:deploy": "wrangler d1 migrations apply part-generator --remote -c backend/wrangler.jsonc && wrangler deploy -c backend/wrangler.jsonc"
