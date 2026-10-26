@@ -25,18 +25,28 @@ parameters, the ring volumes match the CadQuery STEP files to 0.005 mm³
 
 ## Bearing parameters
 
-| Parameter | Default | Notes |
+You set the envelope and the balls; everything else is worked out and can be
+overridden.
+
+| Input | Default | Notes |
 |---|---|---|
-| Ball diameter | 4.7625 mm | 3/16" |
-| Ball count | 33 | preview only, max that fits is shown |
-| Ball circle | 73.89 mm | |
-| Play | 0.05 mm | total; axial = radial since the flanks are 45° |
-| Groove flat | 1.0 mm | flat at the bottom of each V |
-| Thickness | 6.4 mm | |
-| Bore / inner ring OD | 52 / 72 mm | |
-| Outer ring ID / OD | 76.7 / 91.7 mm | |
-| Fill notch | 6.3 × 1.8 mm | bottom face, both rings |
-| Bolt holes | 4 × Ø3 on Ø58 and Ø85.7 | |
+| Outer diameter / bore | 91.7 / 52 mm | |
+| Ball size | 3/16" (4.7625 mm) | standard steel ball sizes, or custom |
+| Play | 0.05 mm | total; axial = radial since the flanks are 45°. Below 0 only with "Allow negative play" |
+| Bolt holes | M3 tight (Ø3.0), 4 per ring | or none |
+| Fill notch | on | lets the balls snap in from the bottom face |
+
+| Auto value | Rule |
+|---|---|
+| Thickness | 1.34 × ball (tower ratio), at least enough for printable lips |
+| Ball circle | middle of the space between bore and OD |
+| Ring lands | halfway between the ball contact point and the face |
+| Groove flat | 0.21 × ball, always clear of the ball |
+| Bolt circles | centred in each ring's wall |
+| Ball count | 70% of the max that fits |
+
+Sliders only cover values that keep the design valid, so dragging can't make
+a wall too thin or a ball overlap a ring.
 
 ## Development
 
