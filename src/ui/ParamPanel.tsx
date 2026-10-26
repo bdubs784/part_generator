@@ -12,7 +12,11 @@ interface Props {
 }
 
 export function ParamPanel({ fields, defs, states, onChange, onReset, onResetAll, anyOverrides }: Props) {
-  const visible = fields.filter((f) => !f.dependsOn || states.get(f.dependsOn)?.value !== 0)
+  const visible = fields.filter((f) => {
+    if (!f.dependsOn) return true
+    const v = states.get(f.dependsOn)?.value
+    return f.dependsOnValue === undefined ? v !== 0 : v === f.dependsOnValue
+  })
 
   const renderSection = (section: FieldDef['section']) => {
     const inSection = visible.filter((f) => f.section === section)

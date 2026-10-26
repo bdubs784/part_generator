@@ -7,6 +7,9 @@
 
 import {
   ballClearance,
+  BORE,
+  boreDiameter,
+  boreReach,
   DERIVED_KEYS,
   innerProfile,
   NOTCH_OVERCUT,
@@ -46,7 +49,8 @@ export function validateBearing(p: BearingParams): ValidationResult<ParamKey> {
   else if (p.play < 0) warn('Negative play: the balls are tight until the races wear in, or bind if the print comes out true', 'play')
 
   // Diameters have to step outwards: bore < inner OD < outer ID < OD.
-  if (p.bore >= p.inner_od) err('Bore must be smaller than the inner ring OD', 'bore', 'inner_od')
+  const boreR = boreReach(p)
+  if (2 * boreR >= p.inner_od) err('Bore must be smaller than the inner ring OD', 'bore', 'inner_od')
   if (p.inner_od >= p.outer_id) err('Inner ring OD must be smaller than the outer ring ID', 'inner_od', 'outer_id')
   if (p.outer_id >= p.od) err('Outer ring ID must be smaller than the outer diameter', 'outer_id', 'od')
   if (issues.some((i) => i.severity === 'error')) return { ok: false, issues }
@@ -75,7 +79,11 @@ export function validateBearing(p: BearingParams): ValidationResult<ParamKey> {
   wall(h - g.outerMouth, 'Outer groove lip', MIN_LIP, 'outer_id', 'width')
 
   // Radial wall behind each race.
-  wall(g.innerFlatR - p.bore / 2, 'Inner ring wall under the groove', MIN_WALL, 'bore', 'pitch_d')
+  wall(g.innerFlatR - boreR, 'Inner ring wall under the groove', MIN_WALL, 'bore', 'pitch_d')
+
+  if (p.bore_shape === BORE.DFLAT && p.dflat >= boreDiameter(p) / 2) {
+    err('D-flat is deeper than the bore radius', 'dflat', 'bore')
+  }
   wall(p.od / 2 - g.outerFlatR, 'Outer ring wall behind the groove', MIN_WALL, 'od', 'pitch_d')
 
   // If the gap between the rings is as big as a ball, nothing holds the balls in.
@@ -94,10 +102,11 @@ export function validateBearing(p: BearingParams): ValidationResult<ParamKey> {
 
   // Bolt holes have to stay between the bore/OD and the groove.
   if (p.hole_d > 0) {
+    const before = issues.length
     const hr = p.hole_d / 2
     const ir = p.inner_bolt_d / 2
     const or = p.outer_bolt_d / 2
-    wall(ir - hr - p.bore / 2, 'Wall between inner holes and bore', MIN_WALL, 'inner_bolt_d', 'hole_d', 'bore')
+    wall(ir - hr - boreR, 'Wall between inner holes and bore', MIN_WALL, 'inner_bolt_d', 'hole_d', 'bore')
     wall(g.innerFlatR - NOTCH_OVERCUT - (ir + hr), 'Wall between inner holes and groove', MIN_WALL, 'inner_bolt_d', 'hole_d')
     wall(or - hr - (g.outerFlatR + NOTCH_OVERCUT), 'Wall between outer holes and groove', MIN_WALL, 'outer_bolt_d', 'hole_d')
     wall(p.od / 2 - (or + hr), 'Wall between outer holes and OD', MIN_WALL, 'outer_bolt_d', 'hole_d', 'od')
@@ -105,12 +114,26 @@ export function validateBearing(p: BearingParams): ValidationResult<ParamKey> {
     const holeGap = (d: number) => d * Math.sin(Math.PI / p.hole_n) - p.hole_d
     wall(holeGap(p.inner_bolt_d), 'Gap between inner holes', MIN_WALL, 'hole_n', 'inner_bolt_d')
     wall(holeGap(p.outer_bolt_d), 'Gap between outer holes', MIN_WALL, 'hole_n', 'outer_bolt_d')
+
+    // say what to do about it once, instead of leaving four wall errors
+    const ringRoom = (outer: number, inner: number) => outer - inner - 2 * MIN_WALL
+    const innerRoom = ringRoom(g.innerFlatR - NOTCH_OVERCUT, boreR)
+    const outerRoom = ringRoom(p.od / 2, g.outerFlatR + NOTCH_OVERCUT)
+    const fits = Math.min(innerRoom, outerRoom)
+    if (issues.length > before) {
+      err(
+        fits > 0
+          ? `Holes up to ${fmt(fits)} mm fit in these rings. Pick a smaller size or move the bolt circles.`
+          : 'No bolt holes fit in these rings. Turn them off or make the rings wider (bigger OD or smaller bore).',
+        'hole_d',
+      )
+    }
   }
 
   return { ok: !issues.some((i) => i.severity === 'error'), issues }
 }
 
-const BASE_KEYS = ['ball_d', 'bore', 'od', 'play', 'hole_d', 'hole_n', 'fill_notch', 'negative_play'] as const
+const BASE_KEYS = ['ball_d', 'bore', 'bore_shape', 'bore_fit', 'od', 'play', 'hole_d', 'hole_n', 'fill_notch', 'negative_play'] as const
 
 // For the API: check the shape of an untrusted body before validating values.
 // Unknown keys are dropped; anything missing or non-numeric fails.

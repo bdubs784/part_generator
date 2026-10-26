@@ -2,7 +2,7 @@ import { beforeAll, describe, expect, it } from 'vitest'
 import { measureVolume } from 'replicad'
 import { initOCNode } from './setupOC'
 import { buildInnerRing, buildOuterRing } from '../src/geometry/bearing'
-import { PRESETS, raceGeometry, resolveBearing } from '../shared/bearing'
+import { BORE, PRESETS, raceGeometry, resolveBearing } from '../shared/bearing'
 
 const V5 = resolveBearing(PRESETS[0].inputs)
 // v5 inner + v7_zero outer
@@ -60,6 +60,37 @@ describe('bearing solids', () => {
   it('skips the notch and holes when they are off', () => {
     const plain = resolveBearing({ ...PRESETS[0].inputs, fill_notch: 0, hole_d: 0 })
     expect(measureVolume(buildInnerRing(plain))).toBeGreaterThan(REF.inner_v5)
+  })
+
+  describe('bore shapes', () => {
+    // no notch or holes, so the bore is the only thing that changes
+    const plain = { ...PRESETS[0].inputs, fill_notch: 0, hole_d: 0, bore: 20, bore_fit: 0 }
+    const w = 6.4
+    let round = 0
+    beforeAll(() => {
+      round = measureVolume(buildInnerRing(resolveBearing(plain)))
+    })
+
+    it('hex bore removes the corners outside the inscribed circle', () => {
+      const hex = measureVolume(buildInnerRing(resolveBearing({ ...plain, bore_shape: BORE.HEX })))
+      const extra = ((Math.sqrt(3) / 2) * 20 ** 2 - Math.PI * 10 ** 2) * w
+      expect(round - hex).toBeCloseTo(extra, 1)
+    })
+
+    it('D-flat adds back the segment past the flat', () => {
+      const inputs = { ...plain, bore_shape: BORE.DFLAT, overrides: { ...plain.overrides, dflat: 2 } }
+      const dflat = measureVolume(buildInnerRing(resolveBearing(inputs)))
+      const r = 10
+      const h = 2
+      const segment = r * r * Math.acos((r - h) / r) - (r - h) * Math.sqrt(2 * r * h - h * h)
+      expect(dflat - round).toBeCloseTo(segment * w, 1)
+    })
+
+    it('shaft fit opens the bore up', () => {
+      const loose = measureVolume(buildInnerRing(resolveBearing({ ...plain, bore_fit: 0.2 })))
+      const ring = (d: number) => (Math.PI / 4) * d * d * w
+      expect(round - loose).toBeCloseTo(ring(20.2) - ring(20), 1)
+    })
   })
 
   it('cuts one hole per hole_n', () => {

@@ -15,7 +15,9 @@ export const SCHEMA_VER = 1
 // Values the user always sets.
 export interface BaseInputs {
   ball_d: number // steel ball diameter
-  bore: number // inner ring bore
+  bore: number // shaft size: diameter, or across flats for a hex shaft
+  bore_shape: number // 0 round, 1 D-flat, 2 hex
+  bore_fit: number // added to the bore so the printed hole fits the shaft
   od: number // outer ring outside diameter
   play: number // total play, axial = radial because the flanks are 45 deg
   hole_d: number // bolt hole diameter, 0 = no holes
@@ -38,6 +40,7 @@ export interface DerivedParams {
   inner_bolt_angle: number // deg, angle of the first hole from +X (the notch)
   outer_bolt_d: number
   outer_bolt_angle: number
+  dflat: number // depth of the D-flat, measured in from the round bore
 }
 
 export type DerivedKey = keyof DerivedParams
@@ -61,6 +64,7 @@ export const DERIVED_KEYS: DerivedKey[] = [
   'inner_bolt_angle',
   'outer_bolt_d',
   'outer_bolt_angle',
+  'dflat',
 ]
 
 // Absolute limits. The UI narrows these further to what actually works with
@@ -68,6 +72,8 @@ export const DERIVED_KEYS: DerivedKey[] = [
 export const PARAMS: ParamDef<ParamKey>[] = [
   { key: 'ball_d', label: 'Ball diameter', unit: 'mm', min: 1.5, max: 12.7, step: 0.01 },
   { key: 'bore', label: 'Bore', unit: 'mm', min: 1, max: 190, step: 0.1 },
+  { key: 'bore_shape', label: 'Bore shape', unit: '', min: 0, max: 2, step: 1, integer: true },
+  { key: 'bore_fit', label: 'Shaft fit', unit: 'mm', min: -0.1, max: 0.5, step: 0.01 },
   { key: 'od', label: 'Outer diameter', unit: 'mm', min: 10, max: 250, step: 0.1 },
   { key: 'play', label: 'Play', unit: 'mm', min: -0.15, max: 0.3, step: 0.005 },
   { key: 'hole_d', label: 'Bolt holes', unit: 'mm', min: 0, max: 10, step: 0.1 },
@@ -86,6 +92,7 @@ export const PARAMS: ParamDef<ParamKey>[] = [
   { key: 'inner_bolt_angle', label: 'Inner hole angle', unit: 'deg', min: 0, max: 90, step: 0.5 },
   { key: 'outer_bolt_d', label: 'Outer bolt circle', unit: 'mm', min: 5, max: 250, step: 0.1 },
   { key: 'outer_bolt_angle', label: 'Outer hole angle', unit: 'deg', min: 0, max: 90, step: 0.5 },
+  { key: 'dflat', label: 'D-flat depth', unit: 'mm', min: 0.1, max: 20, step: 0.05 },
 ]
 
 // Common steel ball sizes.
@@ -101,6 +108,23 @@ export const BALL_SIZES = [
   { label: '8 mm', value: 8 },
 ]
 
+export const BORE = { ROUND: 0, DFLAT: 1, HEX: 2 }
+
+export const BORE_SHAPES = [
+  { label: 'Round', value: BORE.ROUND },
+  { label: 'D-flat', value: BORE.DFLAT },
+  { label: 'Hex', value: BORE.HEX },
+]
+
+// Added to the bore diameter (or across flats). Printed holes shrink a bit,
+// so "press" at +0 is usually a press fit already.
+export const BORE_FITS = [
+  { label: 'Press (+0.00)', value: 0 },
+  { label: 'Snug (+0.10)', value: 0.1 },
+  { label: 'Slip (+0.20)', value: 0.2 },
+  { label: 'Loose (+0.30)', value: 0.3 },
+]
+
 // Printed holes come out undersized, so these run a bit big except "M3 tight",
 // which is what the tower bearing uses.
 export const HOLE_SIZES = [
@@ -114,8 +138,11 @@ export const HOLE_SIZES = [
 
 export const FIELDS: FieldDef<ParamKey>[] = [
   { key: 'od', section: 'basic', group: 'Size', kind: 'number' },
-  { key: 'bore', section: 'basic', group: 'Size', kind: 'number' },
   { key: 'width', section: 'basic', group: 'Size', kind: 'number', derived: true },
+  { key: 'bore', section: 'basic', group: 'Shaft', kind: 'number' },
+  { key: 'bore_shape', section: 'basic', group: 'Shaft', kind: 'select', options: BORE_SHAPES },
+  { key: 'dflat', section: 'basic', group: 'Shaft', kind: 'number', derived: true, dependsOn: 'bore_shape', dependsOnValue: BORE.DFLAT },
+  { key: 'bore_fit', section: 'basic', group: 'Shaft', kind: 'select', options: BORE_FITS, custom: true },
   { key: 'ball_d', section: 'basic', group: 'Balls', kind: 'select', options: BALL_SIZES, custom: true },
   { key: 'ball_n', section: 'basic', group: 'Balls', kind: 'number', derived: true },
   { key: 'play', section: 'basic', group: 'Balls', kind: 'number' },
@@ -164,6 +191,8 @@ export const TOWER = {
 export const DEFAULT_INPUTS: BearingInputs = {
   ball_d: 4.7625,
   bore: 52,
+  bore_shape: BORE.ROUND,
+  bore_fit: 0.1,
   od: 91.7,
   play: 0.05,
   hole_d: 3.0,
@@ -177,6 +206,7 @@ export const DEFAULT_INPUTS: BearingInputs = {
 // they pin every derived value.
 const TOWER_V5: BearingInputs = {
   ...DEFAULT_INPUTS,
+  bore_fit: 0, // the printed 52 mm bore is what's on the arm
   overrides: {
     width: 6.4,
     ball_n: 33,
@@ -251,6 +281,19 @@ export function maxFlat(ball_d: number, play: number): number {
   return 2 * ((Math.SQRT2 - 1) * (ball_d / 2) + play / 2)
 }
 
+type BoreInputs = Pick<BaseInputs, 'bore' | 'bore_shape' | 'bore_fit'>
+
+// Bore as modelled: shaft size plus the fit allowance.
+export function boreDiameter(p: BoreInputs): number {
+  return p.bore + p.bore_fit
+}
+
+// Furthest the bore reaches from the axis. For a hex that's the corners.
+export function boreReach(p: BoreInputs): number {
+  const d = boreDiameter(p)
+  return p.bore_shape === BORE.HEX ? d / Math.sqrt(3) : d / 2
+}
+
 const roundTo = (v: number, step: number) => Math.round(v / step) * step
 const floorTo = (v: number, step: number) => Math.floor(v / step + 1e-9) * step
 const clean = (v: number) => Number(v.toFixed(4))
@@ -288,15 +331,19 @@ export function resolveBearing(inputs: BearingInputs): BearingParams {
   // bolt circles centred in the wall between the bore/OD and the groove
   const innerGrooveR = g0.innerFlatR - NOTCH_OVERCUT
   const outerGrooveR = g0.outerFlatR + NOTCH_OVERCUT
-  const inner_bolt_d = pick('inner_bolt_d', () => roundTo(inputs.bore / 2 + innerGrooveR, 0.1))
+  const inner_bolt_d = pick('inner_bolt_d', () => roundTo(boreReach(inputs) + innerGrooveR, 0.1))
   const outer_bolt_d = pick('outer_bolt_d', () => roundTo(outerGrooveR + inputs.od / 2, 0.1))
   // half a hole spacing puts the notch (at 0 deg) midway between two holes
   const inner_bolt_angle = pick('inner_bolt_angle', () => 180 / inputs.hole_n)
   const outer_bolt_angle = pick('outer_bolt_angle', () => 180 / inputs.hole_n)
+  // a 5 mm motor shaft has a 0.5 mm flat
+  const dflat = pick('dflat', () => Math.max(0.2, roundTo(inputs.bore * 0.1, 0.05)))
 
   return {
     ball_d: d,
     bore: inputs.bore,
+    bore_shape: inputs.bore_shape,
+    bore_fit: inputs.bore_fit,
     od: inputs.od,
     play: inputs.play,
     hole_d: inputs.hole_d,
@@ -315,6 +362,7 @@ export function resolveBearing(inputs: BearingInputs): BearingParams {
     inner_bolt_angle,
     outer_bolt_d,
     outer_bolt_angle,
+    dflat,
   }
 }
 
@@ -338,13 +386,15 @@ export function outerProfile(p: BearingParams, g = raceGeometry(p)): Profile {
   ]
 }
 
-export function innerProfile(p: BearingParams, g = raceGeometry(p)): Profile {
+// boreR is overridable so a hex bore can start from a smaller round hole
+// and have the hex cut into it.
+export function innerProfile(p: BearingParams, g = raceGeometry(p), boreR = boreDiameter(p) / 2): Profile {
   const h = p.width / 2
   const f = p.flat / 2
   const land = p.inner_od / 2
   return [
-    [p.bore / 2, -h],
-    [p.bore / 2, h],
+    [boreR, -h],
+    [boreR, h],
     [land, h],
     [land, g.innerMouth],
     [g.innerFlatR, f],

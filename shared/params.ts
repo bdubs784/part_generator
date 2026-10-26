@@ -18,7 +18,10 @@ export interface FieldDef<K extends string = string> {
   section: 'basic' | 'advanced'
   group: string // heading inside the section
   kind: 'number' | 'select' | 'toggle'
-  dependsOn?: K // hidden while that value is 0 (e.g. hole count with no holes)
+  // Hidden unless that value is non-zero (hole count with no holes), or equals
+  // dependsOnValue when given (D-flat depth only for a D-flat bore).
+  dependsOn?: K
+  dependsOnValue?: number
   derived?: boolean // worked out automatically unless the user overrides it
   options?: { label: string; value: number }[]
   custom?: boolean // select that also allows typing any value

@@ -5,9 +5,11 @@
 // Pure functions: params in, replicad shapes out. setOC() has to have been
 // called before any of this runs (see oc.ts).
 
-import { draw, makeBox, makeCylinder, type Shape3D, type Sketch } from 'replicad'
+import { draw, drawPolysides, makeBox, makeCylinder, type Shape3D, type Sketch } from 'replicad'
 import {
   boltCircle,
+  BORE,
+  boreDiameter,
   innerProfile,
   NOTCH_OVERCUT,
   outerProfile,
@@ -56,9 +58,34 @@ export function buildOuterRing(p: BearingParams): Shape3D {
   return cutNotch(ring, p, p.inner_od / 2, g.outerFlatR + NOTCH_OVERCUT)
 }
 
+// Hex prism along Y, across flats = af. drawPolysides takes the corner radius.
+function hexPrism(af: number, length: number): Shape3D {
+  const sketch = drawPolysides(af / Math.sqrt(3), 6).sketchOnPlane('XY', [0, 0, -length / 2]) as Sketch
+  return sketch.extrude(length).rotate(90, [0, 0, 0], [1, 0, 0])
+}
+
+// The material a D-flat adds back into a round bore: the circular segment
+// beyond the flat, on the +X side (same side as the fill notch).
+function dFlatSegment(boreR: number, depth: number, width: number): Shape3D {
+  const box = makeBox([boreR - depth, -width / 2, -boreR], [boreR + 0.5, width / 2, boreR])
+  return box.intersect(makeCylinder(boreR + 0.5, width, [0, -width / 2, 0], [0, 1, 0]))
+}
+
+function cutBore(p: BearingParams, g: ReturnType<typeof raceGeometry>): Shape3D {
+  const d = boreDiameter(p)
+  if (p.bore_shape === BORE.HEX) {
+    // revolve with a smaller round hole, then cut the hex through it
+    const ring = revolveProfile(innerProfile(p, g, d * 0.45))
+    return ring.cut(hexPrism(d, p.width + 2))
+  }
+  const ring = revolveProfile(innerProfile(p, g))
+  if (p.bore_shape === BORE.DFLAT) return ring.fuse(dFlatSegment(d / 2, p.dflat, p.width))
+  return ring
+}
+
 export function buildInnerRing(p: BearingParams): Shape3D {
   const g = raceGeometry(p)
-  let ring = revolveProfile(innerProfile(p, g))
+  let ring = cutBore(p, g)
   ring = cutHoles(ring, boltCircle(p.inner_bolt_d, p.inner_bolt_angle, p.hole_n), p.hole_d, p.width)
   // from just inside the inner race flat out into the ring gap
   return cutNotch(ring, p, g.innerFlatR - NOTCH_OVERCUT, p.outer_id / 2)

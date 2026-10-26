@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  BORE,
   DEFAULT_INPUTS,
   FIELDS,
   maxBalls,
@@ -111,6 +112,23 @@ describe('validateBearing', () => {
   it('keeps the bore a wall away from the groove', () => {
     expect(tower({ hole_d: 0, bore: 65 }).ok).toBe(true)
     expect(tower({ hole_d: 0, bore: 66 }).ok).toBe(false)
+  })
+
+  it('checks hex bore walls at the corners, not the flats', () => {
+    // 50 across flats reaches 28.9 at the corners, too close to the holes on Ø58
+    expect(tower({ bore: 50, bore_shape: BORE.HEX }).ok).toBe(false)
+    expect(tower({ bore: 50, bore_shape: BORE.ROUND }).ok).toBe(true)
+  })
+
+  it('counts the shaft fit in the bore walls', () => {
+    // wall under the groove: 34.05 - 65.5 / 2 = 1.30 ok, with +0.3 it's 1.15
+    expect(tower({ hole_d: 0, bore: 65.5 }).ok).toBe(true)
+    expect(tower({ hole_d: 0, bore: 65.5, bore_fit: 0.3 }).ok).toBe(false)
+  })
+
+  it('rejects a D-flat deeper than the bore radius', () => {
+    expect(tower({ bore: 10, bore_shape: BORE.DFLAT, dflat: 1 }).ok).toBe(true)
+    expect(tower({ bore: 10, bore_shape: BORE.DFLAT, dflat: 5 }).ok).toBe(false)
   })
 
   it('catches bolt holes running into the bore', () => {
