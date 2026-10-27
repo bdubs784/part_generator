@@ -34,8 +34,15 @@ function BodyMesh({ mesh, color, section, ghost }: { mesh: MeshData; color: stri
     geometry.setAttribute('position', new THREE.BufferAttribute(mesh.positions, 3))
     geometry.setAttribute('normal', new THREE.BufferAttribute(mesh.normals, 3))
     geometry.setIndex(new THREE.BufferAttribute(mesh.indices, 1))
-    const edges = new THREE.BufferGeometry()
-    edges.setAttribute('position', new THREE.BufferAttribute(mesh.edges, 3))
+    // OpenCascade sends its real B-rep edges; a plain mesh (the C++ engine)
+    // has none, so draw creases sharper than 25 deg instead
+    let edges: THREE.BufferGeometry
+    if (mesh.edges.length > 0) {
+      edges = new THREE.BufferGeometry()
+      edges.setAttribute('position', new THREE.BufferAttribute(mesh.edges, 3))
+    } else {
+      edges = new THREE.EdgesGeometry(geometry, 25)
+    }
     return { geometry, edges }
   }, [mesh])
 

@@ -31,6 +31,9 @@ produces the same rings (volumes match the CadQuery STEP files to 0.005 mm³).
   counts.
 - **Finishing:** edge chamfers (for elephant's foot and a lead-in), counterbored
   bolt holes sized for socket head screws, and an optional outer flange.
+- **Two geometry engines:** a C++ engine I wrote on Manifold, compiled to
+  WebAssembly, for the live preview (10–23× faster, 305 KB), and OpenCascade
+  for the exact STEP/STL files. You can switch the preview between them.
 - Undo/redo, section view, STEP and STL per ring.
 
 ## How the bearing is built
@@ -82,7 +85,7 @@ Warnings (it still builds): narrow fill notch, negative play.
 flowchart LR
   subgraph Browser
     UI["React UI<br/>sliders, validation, make it fit"]
-    W["Web Worker<br/>replicad / OpenCascade wasm<br/>LRU cache by param hash"]
+    W["Web Worker<br/>C++/Manifold wasm: preview<br/>OpenCascade wasm: STEP/STL<br/>LRU cache by param hash"]
     V["three.js preview"]
     UI -- params --> W
     W -- meshes, STEP/STL --> UI
@@ -97,8 +100,10 @@ flowchart LR
   API --> DB
 ```
 
-- Geometry stays in the browser. OpenCascade runs in a Web Worker so the page
-  never freezes, and repeat builds come out of a cache keyed by the parameters.
+- Geometry stays in the browser, in a Web Worker so the page never freezes.
+  The preview comes from the C++ engine; OpenCascade (23 MB) only loads when
+  you download a file or ask for the exact preview. Repeat builds come out of
+  a cache keyed by the parameters.
 - `shared/` has no CAD imports, so the same validation runs in the UI and the
   Worker. The server never trusts the client.
 - The site is static on GitHub Pages; the API is a Cloudflare Worker with D1.
@@ -129,14 +134,26 @@ curl https://part-generator-api.blainewatkins784.workers.dev/api/designs?limit=1
 ## Performance
 
 Measured on my laptop, October 2026. Headless Chromium for the browser numbers,
-`curl` for the API.
+`curl` for the API, Node for `npm run bench`.
+
+**C++/Manifold vs OpenCascade** (both rings, build + mesh, median of 7, Node 24):
+
+| Design | OpenCascade | C++ / Manifold | Speedup | Volume difference |
+|---|---|---|---|---|
+| Tower v5 (4 holes, notch) | 343 ms | 28.8 ms | 12× | −0.006% |
+| Auto default (chamfers) | 539 ms | 34.5 ms | 16× | −0.006% |
+| Hex bore | 408 ms | 40.1 ms | 10× | −0.013% |
+| Counterbores + flange | 764 ms | 55.9 ms | 14× | −0.005% |
+| 8 holes | 1003 ms | 44.0 ms | 23× | −0.004% |
+
+In the browser (same session, default design, n=10): C++ median **64 ms** per
+rebuild, OpenCascade 1100 ms. The C++ wasm is 105 KB gzipped against 7.3 MB.
 
 | What | Result |
 |---|---|
-| Build both rings (cache miss, default bearing) | median **462 ms** (n=20, 452–500), about 230 ms per ring including meshing |
 | Same build from the cache | **< 1 ms** in the worker (n=10) |
-| First build after the CAD kernel loads | 701 ms (inner ring 479 ms, includes wasm warm-up) |
-| Live site: page drawn / first model on screen (cold cache) | 3.3 s / 6.6 s, mostly the 7.3 MB (gzipped) OpenCascade wasm |
+| Batching all hole/notch cuts into one boolean (OpenCascade, Node) | 925 → 786 ms default, 1681 → 1205 ms with counterbores + flange |
+| Live site before the C++ engine: page drawn / first model (cold cache) | 3.3 s / 6.6 s, mostly the OpenCascade download |
 | API, `GET` endpoints (new TLS connection each time) | median 155–165 ms, p95 under 205 ms (n=25 each) |
 | API, `POST /api/designs` | median 240 ms (n=10) |
 
@@ -167,6 +184,9 @@ npm run lint
 
 npm run api:migrate:local   # once: create the local D1 tables
 npm run api:dev             # Worker on http://127.0.0.1:8787
+
+npm run engine:build        # rebuild the C++ engine (needs emsdk, CMake, Ninja)
+npm run bench               # C++ vs OpenCascade timings and volume differences
 ```
 
 ## Roadmap
@@ -178,4 +198,4 @@ npm run api:dev             # Worker on http://127.0.0.1:8787
 - [x] Gallery of shared designs with download counts
 - [x] Edge chamfers, counterbored bolt holes, outer flange
 - [ ] Spur gear, MG996R servo mount
-- [ ] Geometry engine in C++/WebAssembly (Manifold), benchmarked against this one
+- [x] Geometry engine in C++/WebAssembly (Manifold), benchmarked against OpenCascade

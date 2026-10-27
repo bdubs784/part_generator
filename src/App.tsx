@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { bearing } from './geometry/registry'
 import { useGeometry } from './geometry/useGeometry'
+import type { Engine } from './worker/protocol'
 import { migrateInputs, raceGeometry, type BearingInputs } from '../shared/bearing'
 import { parseBearingInputs } from '../shared/validate'
 import { clearOverride, fieldRange, isOverridden, optionValid, setField } from '../shared/form'
@@ -53,11 +54,13 @@ export default function App() {
   // the saved design on screen, if any: downloads of it count toward its total
   const [saved, setSaved] = useState<{ id: string; inputs: BearingInputs } | null>(null)
   const [galleryOpen, setGalleryOpen] = useState(false)
+  // C++ for the live preview by default; OpenCascade on request (and always for files)
+  const [engine, setEngine] = useState<Engine>('cpp')
 
   const params = useMemo(() => part.resolve(inputs), [inputs])
   const validation = useMemo(() => part.validate(params), [params])
   const race = useMemo(() => raceGeometry(params), [params])
-  const geometry = useGeometry(params, validation.ok)
+  const geometry = useGeometry(params, validation.ok, engine)
   const { model } = geometry
 
   // Per-field slider limits, auto/override state and issue highlighting.
@@ -214,7 +217,7 @@ export default function App() {
   const onDownload = (body: string, format: 'step' | 'stl') => {
     if (!model) return Promise.reject(new Error('Nothing built yet'))
     if (saved && saved.inputs === inputs) recordDownload(saved.id)
-    return geometry.exportFile(model.key, body, format)
+    return geometry.exportFile(params, body, format)
   }
 
   const bodies: Body[] = model
@@ -322,8 +325,17 @@ export default function App() {
           <label>
             <input type="checkbox" checked={section} onChange={(e) => setSection(e.target.checked)} /> Section
           </label>
+          <select
+            aria-label="Engine"
+            value={engine}
+            onChange={(e) => setEngine(e.target.value as Engine)}
+            title="Preview engine. Files always come from OpenCascade."
+          >
+            <option value="cpp">C++ / Manifold (fast)</option>
+            <option value="occ">OpenCascade (exact)</option>
+          </select>
           <span className="status" data-testid="status" title={timings}>
-            {geometry.kernel === 'loading' && 'Loading CAD kernel…'}
+            {(geometry.kernel === 'loading' || geometry.kernel === 'idle') && 'Loading CAD kernel…'}
             {geometry.kernel === 'failed' && 'CAD kernel failed to load'}
             {geometry.kernel === 'ready' && validation.ok && !geometry.current && (
               <>

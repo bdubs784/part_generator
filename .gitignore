@@ -6,3 +6,5 @@ dist
 test-results
 playwright-report
 *.tsbuildinfo
+# the built C++ engine is committed so CI and Pages need no emscripten
+!engine/dist

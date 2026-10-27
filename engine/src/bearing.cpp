@@ -24,8 +24,6 @@ using emscripten::val;
 
 namespace {
 
-constexpr double kPi = 3.14159265358979323846;
-
 // The ring axis is Y (to match the CadQuery/OpenCascade frame). Manifold
 // revolves and extrudes along Z, so everything is built Z-up and turned once
 // at the end: rotating -90 deg about X sends +Z to +Y.
@@ -82,7 +80,7 @@ val buildRing(val profileJs, int segments, val cylindersJs, val boxesJs, double 
     const double r = hexAcrossFlats / std::sqrt(3.0);
     SimplePolygon hex;
     for (int i = 0; i < 6; i++) {
-      const double a = kPi / 3 * i;
+      const double a = manifold::kPi / 3 * i;  // kPi comes with Manifold
       hex.push_back({r * std::cos(a), r * std::sin(a)});
     }
     ring = ring - Manifold::Extrude({hex}, width + 2).Translate({0, 0, -h - 1});

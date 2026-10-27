@@ -281,3 +281,36 @@ scaled with the hole count. Holes, counterbores and the notch are now
 collected into one compound and cut in a single boolean. Measured in Node
 (median of 5, both rings): default bearing 925 → 786 ms, with counterbores
 and a flange 1681 → 1205 ms. Volumes are unchanged to 0.005 mm³.
+
+## C++/WebAssembly engine (Manifold)
+
+`engine/src/bearing.cpp` builds the same rings with
+[Manifold](https://github.com/elalish/manifold), a C++ mesh-boolean library,
+compiled to WebAssembly with Emscripten. It's used for the live preview;
+STEP and STL files still come from OpenCascade.
+
+- **Same numbers, two kernels.** The race math, profiles, chamfers and the
+  list of cutting tools are computed once in TypeScript
+  (`manifoldEngine.ts` builds a "recipe" from the shared functions). The C++
+  only revolves the cross-section and does the booleans. If the two engines
+  disagree, it's a kernel difference, not a math difference.
+- **Why not Manifold for everything:** it works on triangle meshes, so it
+  can't write STEP, and its curved surfaces are facets. With the segment
+  count chosen so facets stay within 0.02 mm of the true circle, volumes come
+  out 0.004–0.013% under OpenCascade's exact ones (`npm run bench`, also
+  checked in `tests/engine.test.ts` on every push).
+- **Speed:** 10–23× faster per build in Node, and in Chromium a median of
+  64 ms vs 1100 ms for the same design.
+- **Size:** 305 KB of wasm (105 KB gzipped) against OpenCascade's 23 MB
+  (7.3 MB gzipped). The worker loads each engine the first time it's
+  needed, so a first visit only downloads the small one; OpenCascade loads
+  when you download a file or switch to the exact engine.
+- **Edges:** a plain mesh has no B-rep edges, so the preview draws creases
+  sharper than 25° (three's `EdgesGeometry`) for the C++ engine.
+- **Build:** Manifold v3.5.4 is pinned and fetched by CMake. The built
+  `engine/dist/bearing_engine.{mjs,wasm}` is committed so CI and Pages don't
+  need Emscripten; `npm run engine:build` rebuilds it (needs emsdk, CMake and
+  Ninja).
+- The C++ takes plain arrays and returns typed arrays copied out of wasm
+  memory (`new Float32Array(typed_memory_view(...))`), so nothing on the JS
+  side points into memory the C++ might free.

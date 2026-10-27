@@ -127,3 +127,12 @@ test('downloading a shared design counts toward its downloads', async ({ page, r
     .poll(async () => (await (await request.get(`http://127.0.0.1:8787/api/designs/${id}`)).json()).downloads)
     .toBe(before + 1)
 })
+
+test('switching to the OpenCascade engine rebuilds with exact geometry', async ({ page }) => {
+  const status = page.getByTestId('status')
+  await page.getByLabel('Engine').selectOption('occ')
+  await expect(status).toHaveText(/Built in \d+ ms$/, { timeout: 45_000 })
+  // and back: the C++ result for these params is still cached
+  await page.getByLabel('Engine').selectOption('cpp')
+  await expect(status).toHaveText(/\(cached\)/)
+})

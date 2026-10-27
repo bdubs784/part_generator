@@ -31,16 +31,33 @@ interface Entry {
 // Parameters hash to the same key whatever order the fields are in.
 export const paramsKey = (params: unknown) => stableStringify(params)
 
-export function createGeometryService<P>(build: Builder<P>, cacheSize = 16) {
-  // Map keeps insertion order, so delete + set moves an entry to the end and
-  // the first key is always the least recently used.
-  const cache = new Map<string, Entry>()
-
-  const remember = (key: string, entry: Entry) => {
-    cache.delete(key)
-    cache.set(key, entry)
-    while (cache.size > cacheSize) cache.delete(cache.keys().next().value!)
+// Least-recently-used cache. Map keeps insertion order, so delete + set moves
+// an entry to the end and the first key is always the oldest.
+export function createLru<V>(size: number) {
+  const map = new Map<string, V>()
+  return {
+    get(key: string): V | undefined {
+      const v = map.get(key)
+      if (v !== undefined) {
+        map.delete(key)
+        map.set(key, v)
+      }
+      return v
+    },
+    set(key: string, v: V) {
+      map.delete(key)
+      map.set(key, v)
+      while (map.size > size) map.delete(map.keys().next().value!)
+    },
+    get size() {
+      return map.size
+    },
   }
+}
+
+export function createGeometryService<P>(build: Builder<P>, cacheSize = 16) {
+  const cache = createLru<Entry>(cacheSize)
+  const remember = (key: string, entry: Entry) => cache.set(key, entry)
 
   return {
     build(params: P): BuildResult {
