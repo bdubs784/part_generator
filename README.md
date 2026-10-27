@@ -5,7 +5,11 @@ the model update, download STEP or STL.
 
 **Live:** https://bdubs784.github.io/part_generator/
 
-![Demo: dragging the OD, section view, picking a 608, hex bore, share link, gallery](docs/demo.gif)
+![From the website to a slicer to a printed, assembled bearing spinning by hand](docs/print-demo.gif)
+
+From the browser to a working part: design it on the site, slice the STL
+(Bambu Studio, PLA on a Bambu Lab A1), drop in the steel balls through the
+fill notch, and it spins. [Full video (20 s)](docs/print-demo.mp4)
 
 The first part is a printable ball bearing: two rings with 45° V-groove races
 for steel balls, a fill notch to snap the balls in, and bolt holes. The tool
@@ -13,7 +17,11 @@ started as a port of a CadQuery script I wrote for a bearing I designed and
 printed, and with the reference preset it still produces those exact rings
 (volumes match the CadQuery STEP files to 0.005 mm³).
 
+<img src="docs/printed-bearing.jpg" alt="A printed bearing from the generator: two white PLA rings with steel balls between them" width="320">
+
 ## What it does
+
+![The app: dragging the OD, section view, picking a 608, hex bore, share link, gallery](docs/demo.gif)
 
 - **Few inputs, the rest worked out.** Set the OD, bore, ball size and play;
   thickness, ball circle, groove, notch, bolt circles and ball count follow.
