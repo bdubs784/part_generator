@@ -7,11 +7,11 @@ the model update, download STEP or STL.
 
 ![Demo: dragging the OD, section view, picking a 608, hex bore, share link, gallery](docs/demo.gif)
 
-The first part is the printed ball bearing from the base (tower) joint of my
-5-DOF robot arm: two rings with 45° V-groove races for steel balls, a fill
-notch to snap the balls in, and bolt holes. The tool started as a port of the
-CadQuery script I used for those rings, and with the tower preset it still
-produces the same rings (volumes match the CadQuery STEP files to 0.005 mm³).
+The first part is a printable ball bearing: two rings with 45° V-groove races
+for steel balls, a fill notch to snap the balls in, and bolt holes. The tool
+started as a port of a CadQuery script I wrote for a bearing I designed and
+printed, and with the reference preset it still produces those exact rings
+(volumes match the CadQuery STEP files to 0.005 mm³).
 
 ## What it does
 
@@ -140,7 +140,7 @@ Measured on my laptop, October 2026. Headless Chromium for the browser numbers,
 
 | Design | OpenCascade | C++ / Manifold | Speedup | Volume difference |
 |---|---|---|---|---|
-| Tower v5 (4 holes, notch) | 343 ms | 28.8 ms | 12× | −0.006% |
+| Reference design (4 holes, notch) | 343 ms | 28.8 ms | 12× | −0.006% |
 | Auto default (chamfers) | 539 ms | 34.5 ms | 16× | −0.006% |
 | Hex bore | 408 ms | 40.1 ms | 10× | −0.013% |
 | Counterbores + flange | 764 ms | 55.9 ms | 14× | −0.005% |

@@ -4,15 +4,15 @@ import { initOCNode } from './setupOC'
 import { buildInnerRing, buildOuterRing } from '../src/geometry/bearing'
 import { BORE, PRESETS, raceGeometry, resolveBearing } from '../shared/bearing'
 
-const V5 = resolveBearing(PRESETS[0].inputs)
-// v5 inner + v7_zero outer
-const V7 = resolveBearing(PRESETS[1].inputs)
+// the reference design with 0.05 play, and its zero-play outer ring
+const REF_PLAY = resolveBearing(PRESETS[0].inputs)
+const REF_ZERO = resolveBearing(PRESETS[1].inputs)
 
 // Volumes measured from the STEP files the CadQuery script writes (mm^3).
 const REF = {
-  inner_v5: 10994.5143,
-  outer_v5: 11593.172,
-  outer_v7_zero: 11641.984,
+  inner: 10994.5143,
+  outer: 11593.172,
+  outer_zero_play: 11641.984,
 }
 
 beforeAll(async () => {
@@ -21,44 +21,44 @@ beforeAll(async () => {
 
 describe('race math', () => {
   it('matches the numbers the CadQuery script prints', () => {
-    const g = raceGeometry(V5)
+    const g = raceGeometry(REF_PLAY)
     expect(g.A).toBeCloseTo(40.3376, 4)
     expect(g.B).toBeCloseTo(33.5524, 4)
     expect(g.outerFlatR).toBeCloseTo(39.8376, 4)
     expect(g.innerFlatR).toBeCloseTo(34.0524, 4)
-    const z = raceGeometry(V7)
+    const z = raceGeometry(REF_ZERO)
     expect(z.A).toBeCloseTo(40.2876, 4)
     expect(z.outerFlatR).toBeCloseTo(39.7876, 4)
   })
 })
 
 describe('bearing solids', () => {
-  it('inner ring matches v5', () => {
-    const ring = buildInnerRing(V5)
-    expect(measureVolume(ring)).toBeCloseTo(REF.inner_v5, 2)
+  it('inner ring matches the CadQuery one', () => {
+    const ring = buildInnerRing(REF_PLAY)
+    expect(measureVolume(ring)).toBeCloseTo(REF.inner, 2)
     const bb = ring.boundingBox.bounds
     expect(bb[0][1]).toBeCloseTo(-3.2, 3)
     expect(bb[1][1]).toBeCloseTo(3.2, 3)
     expect(bb[1][0]).toBeCloseTo(36, 3)
   })
 
-  it('outer ring matches v5', () => {
-    expect(measureVolume(buildOuterRing(V5))).toBeCloseTo(REF.outer_v5, 2)
+  it('outer ring matches the CadQuery one', () => {
+    expect(measureVolume(buildOuterRing(REF_PLAY))).toBeCloseTo(REF.outer, 2)
   })
 
-  it('zero-play preset reproduces v7_zero outer and leaves the inner ring alone', () => {
-    expect(measureVolume(buildOuterRing(V7))).toBeCloseTo(REF.outer_v7_zero, 2)
-    expect(measureVolume(buildInnerRing(V7))).toBeCloseTo(REF.inner_v5, 2)
+  it('zero-play preset reproduces the zero-play outer ring and leaves the inner ring alone', () => {
+    expect(measureVolume(buildOuterRing(REF_ZERO))).toBeCloseTo(REF.outer_zero_play, 2)
+    expect(measureVolume(buildInnerRing(REF_ZERO))).toBeCloseTo(REF.inner, 2)
   })
 
   it('both rings are single valid solids', () => {
     const oc = getOC()
-    for (const ring of [buildInnerRing(V5), buildOuterRing(V5)]) {
+    for (const ring of [buildInnerRing(REF_PLAY), buildOuterRing(REF_PLAY)]) {
       expect(ring.solids.length).toBe(1)
       // OpenCascade's own topology/geometry check: closed shells, no bad faces
       expect(new oc.BRepCheck_Analyzer(ring.wrapped, true, false, false).IsValid()).toBe(true)
     }
-    expect(buildOuterRing(V5).boundingBox.bounds[1][0]).toBeCloseTo(45.85, 3)
+    expect(buildOuterRing(REF_PLAY).boundingBox.bounds[1][0]).toBeCloseTo(45.85, 3)
   })
 
   it('stays valid across bore shapes, hole counts and ball sizes', () => {
@@ -80,7 +80,7 @@ describe('bearing solids', () => {
 
   it('skips the notch and holes when they are off', () => {
     const plain = resolveBearing({ ...PRESETS[0].inputs, fill_notch: 0, hole_d: 0 })
-    expect(measureVolume(buildInnerRing(plain))).toBeGreaterThan(REF.inner_v5)
+    expect(measureVolume(buildInnerRing(plain))).toBeGreaterThan(REF.inner)
   })
 
   describe('bore shapes', () => {

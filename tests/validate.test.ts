@@ -15,18 +15,18 @@ import {
 import { parseBearingInputs, validateBearing } from '../shared/validate'
 import { fieldRange } from '../shared/form'
 
-const TOWER = PRESETS[0].inputs
-const tower = (over: Partial<BearingParams>) => validateBearing({ ...resolveBearing(TOWER), ...over })
+const REF_INPUTS = PRESETS[0].inputs
+const ref = (over: Partial<BearingParams>) => validateBearing({ ...resolveBearing(REF_INPUTS), ...over })
 const auto = (over: Partial<BearingInputs>) => validateBearing(resolveBearing({ ...DEFAULT_INPUTS, ...over }))
 const messages = (r: ReturnType<typeof validateBearing>) => r.issues.map((i) => i.message).join(' | ')
 
 describe('resolveBearing', () => {
-  it('reproduces the tower bearing from its preset', () => {
-    const p = resolveBearing(TOWER)
+  it('reproduces the reference design from its preset', () => {
+    const p = resolveBearing(REF_INPUTS)
     expect(p).toMatchObject({ pitch_d: 73.89, inner_od: 72, outer_id: 76.7, width: 6.4, flat: 1, notch_h: 1.8 })
   })
 
-  it('auto values for the tower envelope come out close to the hand-made design', () => {
+  it('auto values for the reference envelope come out close to the hand-made design', () => {
     const p = resolveBearing(DEFAULT_INPUTS)
     expect(p.width).toBe(6.4)
     expect(p.flat).toBe(1)
@@ -58,94 +58,94 @@ describe('resolveBearing', () => {
 })
 
 describe('validateBearing', () => {
-  it('passes both tower presets with no warnings', () => {
+  it('passes both reference presets with no warnings', () => {
     for (const preset of PRESETS) expect(validateBearing(resolveBearing(preset.inputs)).issues).toEqual([])
   })
 
   it('rejects out of range and non-numbers', () => {
-    expect(tower({ ball_d: 50 }).ok).toBe(false)
-    expect(tower({ width: Number.NaN }).ok).toBe(false)
-    expect(tower({ ball_n: 30.5 }).ok).toBe(false)
+    expect(ref({ ball_d: 50 }).ok).toBe(false)
+    expect(ref({ width: Number.NaN }).ok).toBe(false)
+    expect(ref({ ball_n: 30.5 }).ok).toBe(false)
   })
 
   it('rejects diameters out of order', () => {
-    const r = tower({ inner_od: 80 })
+    const r = ref({ inner_od: 80 })
     expect(r.ok).toBe(false)
     expect(r.issues[0].params).toContain('inner_od')
   })
 
   it('rejects balls wider than the ring', () => {
-    expect(tower({ ball_d: 6.5, width: 6.4 }).ok).toBe(false)
+    expect(ref({ ball_d: 6.5, width: 6.4 }).ok).toBe(false)
   })
 
   it('limits the ball count to what fits', () => {
     expect(maxBalls(4.7625, 73.89)).toBe(47)
-    expect(tower({ ball_n: 47 }).ok).toBe(true)
-    expect(tower({ ball_n: 48 }).ok).toBe(false)
+    expect(ref({ ball_n: 47 }).ok).toBe(true)
+    expect(ref({ ball_n: 48 }).ok).toBe(false)
   })
 
   it('catches a groove flat that runs into the ball', () => {
     // max flat for 3/16" balls with 0.05 play is about 2.02 mm
     expect(maxFlat(4.7625, 0.05)).toBeCloseTo(2.0227, 3)
-    expect(tower({ flat: 1.95 }).ok).toBe(true)
-    const r = tower({ flat: 2.2 })
+    expect(ref({ flat: 1.95 }).ok).toBe(true)
+    const r = ref({ flat: 2.2 })
     expect(r.ok).toBe(false)
     expect(messages(r)).toMatch(/Balls overlap the inner ring/)
   })
 
   it('needs the opt-in for negative play', () => {
-    expect(tower({ play: -0.025 }).ok).toBe(false)
-    const r = tower({ play: -0.025, negative_play: 1 })
+    expect(ref({ play: -0.025 }).ok).toBe(false)
+    const r = ref({ play: -0.025, negative_play: 1 })
     expect(r.ok).toBe(true)
     expect(messages(r)).toMatch(/Negative play/)
   })
 
   it('catches a groove that cuts through the faces', () => {
-    expect(tower({ inner_od: 75, width: 4.8 }).ok).toBe(false)
+    expect(ref({ inner_od: 75, width: 4.8 }).ok).toBe(false)
   })
 
   it('treats a lip under the minimum as an error', () => {
-    const r = tower({ width: 5.9 })
+    const r = ref({ width: 5.9 })
     expect(r.ok).toBe(false)
     expect(messages(r)).toMatch(/Inner groove lip is 0.50 mm/)
   })
 
   it('keeps the bore a wall away from the groove', () => {
-    expect(tower({ hole_d: 0, bore: 65 }).ok).toBe(true)
-    expect(tower({ hole_d: 0, bore: 66 }).ok).toBe(false)
+    expect(ref({ hole_d: 0, bore: 65 }).ok).toBe(true)
+    expect(ref({ hole_d: 0, bore: 66 }).ok).toBe(false)
   })
 
   it('checks hex bore walls at the corners, not the flats', () => {
     // 50 across flats reaches 28.9 at the corners, too close to the holes on Ø58
-    expect(tower({ bore: 50, bore_shape: BORE.HEX }).ok).toBe(false)
-    expect(tower({ bore: 50, bore_shape: BORE.ROUND }).ok).toBe(true)
+    expect(ref({ bore: 50, bore_shape: BORE.HEX }).ok).toBe(false)
+    expect(ref({ bore: 50, bore_shape: BORE.ROUND }).ok).toBe(true)
   })
 
   it('counts the shaft fit in the bore walls', () => {
     // wall under the groove: 34.05 - 65.5 / 2 = 1.30 ok, with +0.3 it's 1.15
-    expect(tower({ hole_d: 0, bore: 65.5 }).ok).toBe(true)
-    expect(tower({ hole_d: 0, bore: 65.5, bore_fit: 0.3 }).ok).toBe(false)
+    expect(ref({ hole_d: 0, bore: 65.5 }).ok).toBe(true)
+    expect(ref({ hole_d: 0, bore: 65.5, bore_fit: 0.3 }).ok).toBe(false)
   })
 
   it('rejects a D-flat deeper than the bore radius', () => {
-    expect(tower({ bore: 10, bore_shape: BORE.DFLAT, dflat: 1 }).ok).toBe(true)
-    expect(tower({ bore: 10, bore_shape: BORE.DFLAT, dflat: 5 }).ok).toBe(false)
+    expect(ref({ bore: 10, bore_shape: BORE.DFLAT, dflat: 1 }).ok).toBe(true)
+    expect(ref({ bore: 10, bore_shape: BORE.DFLAT, dflat: 5 }).ok).toBe(false)
   })
 
   it('catches bolt holes running into the bore', () => {
-    expect(tower({ inner_bolt_d: 54 }).ok).toBe(false)
+    expect(ref({ inner_bolt_d: 54 }).ok).toBe(false)
   })
 
   it('catches holes too close to each other', () => {
-    expect(tower({ hole_n: 12, hole_d: 4.5 }).ok).toBe(false)
+    expect(ref({ hole_n: 12, hole_d: 4.5 }).ok).toBe(false)
   })
 
   it('warns when the notch is narrower than a ball', () => {
-    expect(messages(tower({ notch_w: 4 }))).toMatch(/narrower than a ball/)
+    expect(messages(ref({ notch_w: 4 }))).toMatch(/narrower than a ball/)
   })
 
   it('skips notch and hole checks when they are turned off', () => {
-    expect(tower({ fill_notch: 0, notch_w: 1, hole_d: 0, inner_bolt_d: 2 }).issues).toEqual([])
+    expect(ref({ fill_notch: 0, notch_w: 1, hole_d: 0, inner_bolt_d: 2 }).issues).toEqual([])
   })
 })
 
@@ -158,18 +158,18 @@ describe('slider ranges', () => {
   }
 
   it('stops play at 0 unless negative play is allowed', () => {
-    expect(range(TOWER, 'play')[0]).toBe(0)
-    expect(range({ ...TOWER, negative_play: 1 }, 'play')[0]).toBeLessThan(0)
+    expect(range(REF_INPUTS, 'play')[0]).toBe(0)
+    expect(range({ ...REF_INPUTS, negative_play: 1 }, 'play')[0]).toBeLessThan(0)
   })
 
   it('stops the groove flat before it hits the ball', () => {
-    const [, hi] = range(TOWER, 'flat')
+    const [, hi] = range(REF_INPUTS, 'flat')
     expect(hi).toBeGreaterThan(1.9)
     expect(hi).toBeLessThan(2.05)
   })
 
   it('limits the ball count to the max', () => {
-    expect(range(TOWER, 'ball_n')).toEqual([3, 47])
+    expect(range(REF_INPUTS, 'ball_n')).toEqual([3, 47])
   })
 
   it('every number slider ends on a valid design', () => {
@@ -187,7 +187,7 @@ describe('slider ranges', () => {
 
 describe('parseBearingInputs', () => {
   it('accepts a full input object', () => {
-    expect(parseBearingInputs(TOWER)).toEqual(TOWER)
+    expect(parseBearingInputs(REF_INPUTS)).toEqual(REF_INPUTS)
   })
 
   it('drops unknown keys', () => {
@@ -207,7 +207,7 @@ describe('parseBearingInputs', () => {
 
 describe('finishing options', () => {
   it('auto designs with chamfer, counterbores and a flange are clean', () => {
-    // the tower envelope has room for counterbored M2s, not M3s
+    // the reference envelope has room for counterbored M2s, not M3s
     expect(auto({ counterbore: 1, hole_d: 2.4 }).issues).toEqual([])
     expect(auto({ flange: 1 }).issues).toEqual([])
     expect(auto({ chamfer: 0.8, flange: 1 }).issues).toEqual([])
@@ -226,14 +226,14 @@ describe('finishing options', () => {
   })
 
   it('keeps chamfers to a corner', () => {
-    expect(tower({ chamfer: 0.8 }).ok).toBe(true)
-    expect(tower({ chamfer: 2, width: 3.6, ball_d: 3 }).ok).toBe(false)
+    expect(ref({ chamfer: 0.8 }).ok).toBe(true)
+    expect(ref({ chamfer: 2, width: 3.6, ball_d: 3 }).ok).toBe(false)
   })
 
   it('needs a real flange lip and ring under it', () => {
-    expect(tower({ flange: 1, flange_od: 92, flange_t: 2 }).ok).toBe(false)
-    expect(tower({ flange: 1, flange_od: 100, flange_t: 6 }).ok).toBe(false)
-    expect(tower({ flange: 1, flange_od: 100, flange_t: 2 }).ok).toBe(true)
+    expect(ref({ flange: 1, flange_od: 92, flange_t: 2 }).ok).toBe(false)
+    expect(ref({ flange: 1, flange_od: 100, flange_t: 6 }).ok).toBe(false)
+    expect(ref({ flange: 1, flange_od: 100, flange_t: 2 }).ok).toBe(true)
   })
 })
 

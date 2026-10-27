@@ -35,7 +35,7 @@ describe.runIf(import.meta.env.MODE === 'bench' && existsSync(distWasm))('engine
 
   it('builds both rings with each engine', { timeout: 600_000 }, () => {
     const cases: [string, BearingInputs][] = [
-      ['Tower v5 (4 holes, notch)', PRESETS[0].inputs],
+      ['Reference design (4 holes, notch)', PRESETS[0].inputs],
       ['Auto default (chamfers)', DEFAULT_INPUTS],
       ['Hex bore', { ...DEFAULT_INPUTS, bore: 20, bore_shape: BORE.HEX }],
       ['Counterbores + flange', { ...DEFAULT_INPUTS, hole_d: 2.4, counterbore: 1, flange: 1 }],

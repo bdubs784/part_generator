@@ -47,7 +47,7 @@ describe.runIf(built)('C++ engine vs OpenCascade', () => {
   }, 60_000)
 
   const variants: [string, BearingInputs][] = [
-    ['tower v5', PRESETS[0].inputs],
+    ['reference design', PRESETS[0].inputs],
     ['auto default', DEFAULT_INPUTS],
     ['hex bore', { ...DEFAULT_INPUTS, bore: 20, bore_shape: BORE.HEX }],
     ['D-flat', { ...DEFAULT_INPUTS, bore: 20, bore_shape: BORE.DFLAT }],

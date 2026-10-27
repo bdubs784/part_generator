@@ -281,7 +281,7 @@ export default function App() {
             <option value="" disabled>
               preset or standard size…
             </option>
-            <optgroup label="From my arm">
+            <optgroup label="Reference designs">
               {part.presets.map((pr) => (
                 <option key={pr.name} value={`preset:${pr.name}`}>
                   {pr.name}

@@ -6,7 +6,8 @@
 //                   switches, plus any values they chose to override.
 //   BearingParams - every dimension the geometry needs. resolveBearing()
 //                   fills in whatever wasn't overridden using rules taken
-//                   from the tower bearing that's running on the arm.
+//                   from the reference design (the CadQuery bearing this
+//                   project started from).
 
 import type { FieldDef, ParamDef } from './params'
 
@@ -168,7 +169,7 @@ export function screwFor(hole_d: number): { nominal: number; head: number } {
 }
 
 // Printed holes come out undersized, so these run a bit big except "M3 tight",
-// which is what the tower bearing uses.
+// which is what the reference design uses.
 export const HOLE_SIZES = [
   { label: 'None', value: 0 },
   { label: 'M2 (2.4)', value: 2.4 },
@@ -213,14 +214,15 @@ export const FIELDS: FieldDef<ParamKey>[] = [
 
 // FDM limits, assuming a 0.4 mm nozzle.
 export const MIN_WALL = 1.2 // three perimeters
-// Groove lips are shorter features than walls. The v5 inner ring has 0.75 mm
-// lips and they hold up, so 0.6 is the floor (1.5 line widths).
+// Groove lips are shorter features than walls. The reference design's inner
+// ring has 0.75 mm lips and they hold up, so 0.6 is the floor (1.5 line widths).
 export const MIN_LIP = 0.6
 // How far the lands sit past the ball contact point at minimum, so the ball
 // rolls on the flank and not near the lip edge.
 export const FLANK_MARGIN = 0.3
 // Smallest gap between the rings the auto rule will leave, per ball diameter.
-// The auto tower design comes out at exactly this (1.9 mm for 3/16" balls).
+// The auto design for the reference envelope comes out at exactly this
+// (1.9 mm for 3/16" balls).
 export const MIN_RING_GAP = 0.4
 
 // The notch floor goes this far past the groove flat so the ball clears the
@@ -231,13 +233,13 @@ export const NOTCH_OVERCUT = 0.1
 // near-full ring doesn't jam on print tolerance.
 export const BALL_GAP = 0.1
 
-// Ratios from the tower bearing (3/16" balls), used for the auto values.
-export const TOWER = {
+// Ratios from the reference design (3/16" balls), used for the auto values.
+export const REFERENCE = {
   width: 6.4 / 4.7625, // thickness per ball diameter
   flat: 1.0 / 4.7625,
   notchClearance: 1.5, // notch width over the ball diameter, mm
   notchFloor: 1.4 / 4.7625, // notch floor below the mid plane, per ball diameter
-  fill: 0.7, // load ~70% of the max balls (33 of 47 on the tower)
+  fill: 0.7, // load ~70% of the max balls (33 of 47 on the reference design)
 }
 
 export const DEFAULT_INPUTS: BearingInputs = {
@@ -257,11 +259,11 @@ export const DEFAULT_INPUTS: BearingInputs = {
   overrides: {},
 }
 
-// The rings that are actually on the arm. They predate the auto rules, so
-// they pin every derived value.
-const TOWER_V5: BearingInputs = {
+// The bearing the CadQuery script made. It predates the auto rules, so it
+// pins every derived value; the tests check it still matches those rings.
+const REFERENCE_DESIGN: BearingInputs = {
   ...DEFAULT_INPUTS,
-  bore_fit: 0, // the printed 52 mm bore is what's on the arm
+  bore_fit: 0, // the CadQuery bore is exactly 52
   chamfer: 0, // the CadQuery rings have sharp edges
   overrides: {
     width: 6.4,
@@ -280,12 +282,12 @@ const TOWER_V5: BearingInputs = {
 }
 
 export const PRESETS: { name: string; inputs: BearingInputs }[] = [
-  { name: 'Tower 3/16" v5 (0.05 play)', inputs: TOWER_V5 },
-  // v5 inner + v7_zero outer. Same inner ring; the ball circle moves in by
-  // half the old play so only the outer race changes.
+  { name: 'Reference: 91.7 × 52, 3/16" balls, 0.05 play', inputs: REFERENCE_DESIGN },
+  // Same inner ring with an outer ring redone for zero play: the ball circle
+  // moves in by half the old play, so only the outer race changes.
   {
-    name: 'Tower 3/16" v7 (zero play)',
-    inputs: { ...TOWER_V5, play: 0, overrides: { ...TOWER_V5.overrides, pitch_d: 73.84 } },
+    name: 'Reference: 91.7 × 52, 3/16" balls, zero play',
+    inputs: { ...REFERENCE_DESIGN, play: 0, overrides: { ...REFERENCE_DESIGN.overrides, pitch_d: 73.84 } },
   },
 ]
 
@@ -361,16 +363,16 @@ export function resolveBearing(inputs: BearingInputs): BearingParams {
   const d = inputs.ball_d
   const pick = <K extends DerivedKey>(key: K, auto: () => number): number => o[key] ?? clean(auto())
 
-  // Tower proportion, but thick enough for the minimum lip plus flank margin
+  // Reference proportion, but thick enough for the minimum lip plus flank margin
   // above the contact point (matters for small balls).
   const contactY = d / 2 / Math.SQRT2
   const width = pick('width', () =>
-    Math.max(roundTo(d * TOWER.width, 0.1), Math.ceil(20 * (contactY + FLANK_MARGIN + MIN_LIP)) / 10),
+    Math.max(roundTo(d * REFERENCE.width, 0.1), Math.ceil(20 * (contactY + FLANK_MARGIN + MIN_LIP)) / 10),
   )
   // ball circle in the middle of the radial space, so both ring walls match
   const pitch_d = pick('pitch_d', () => (inputs.bore + inputs.od) / 2)
-  // tower proportion, but never more than 80% of what the ball allows
-  const flat = pick('flat', () => Math.max(0, floorTo(Math.min(d * TOWER.flat, 0.8 * maxFlat(d, inputs.play)), 0.05)))
+  // reference proportion, but never more than 80% of what the ball allows
+  const flat = pick('flat', () => Math.max(0, floorTo(Math.min(d * REFERENCE.flat, 0.8 * maxFlat(d, inputs.play)), 0.05)))
 
   // Lands halfway between the ball contact point and the face, but
   //  - never so close to the face that the lip drops under the minimum
@@ -386,9 +388,9 @@ export function resolveBearing(inputs: BearingInputs): BearingParams {
   const inner_od = pick('inner_od', () => roundTo(2 * (g0.B + mouth), 0.01))
   const outer_id = pick('outer_id', () => roundTo(2 * (g0.A - mouth), 0.01))
 
-  const ball_n = pick('ball_n', () => Math.max(3, Math.round(TOWER.fill * maxBalls(d, pitch_d))))
-  const notch_w = pick('notch_w', () => roundTo(d + TOWER.notchClearance, 0.1))
-  const notch_h = pick('notch_h', () => roundTo(width / 2 - d * TOWER.notchFloor, 0.1))
+  const ball_n = pick('ball_n', () => Math.max(3, Math.round(REFERENCE.fill * maxBalls(d, pitch_d))))
+  const notch_w = pick('notch_w', () => roundTo(d + REFERENCE.notchClearance, 0.1))
+  const notch_h = pick('notch_h', () => roundTo(width / 2 - d * REFERENCE.notchFloor, 0.1))
 
   // bolt circles centred in the wall between the bore/OD and the groove
   const innerGrooveR = g0.innerFlatR - NOTCH_OVERCUT

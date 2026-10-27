@@ -1,4 +1,4 @@
-// Bearing solids. Port of the CadQuery tower bearing script: same profiles,
+// Bearing solids. Port of the original CadQuery bearing script: same profiles,
 // same frame (ring axis = Y, fill notch on the -Y "bottom" face), so the STEP
 // files line up with the old ones in an assembly.
 //
